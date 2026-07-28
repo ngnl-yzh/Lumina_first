@@ -1,0 +1,35 @@
+# 미리내 · XTTS-v2 복제 검증용 — **별도 venv에 설치할 것**
+#
+#   py -3.11 -m venv .venv-xtts
+#   .venv-xtts\Scripts\python -m pip install -r requirements-xtts.txt
+#
+# 메인 venv에 섞지 않는 이유:
+#   coqui-tts가 numpy 2.x와 transformers를 끌어오는데,
+#   PGD 코어는 numpy<2.0에 고정되어 있다. 한 환경에 두면 둘 중 하나가 깨진다.
+#   clone_test.py가 subprocess로 이 venv를 호출하므로 섞을 필요도 없다.
+#
+# 라이선스 주의 — XTTS-v2는 CPML(비상업)이다. 경진대회 시연은 범위 안이지만
+# 상용화 경로에서는 OpenVoice v2(MIT) 등으로 교체해야 한다.
+#
+# ── 설치 중 걸린 함정 3건 (버전 핀의 근거) ───────────────────────────────────
+#
+# ① coqui-tts는 torch를 의존성으로 선언하지 않는다. 직접 설치해야 한다.
+#
+# ② transformers 5.x에서 `isin_mps_friendly`가 제거됐는데 coqui-tts가 이를 import한다.
+#      ImportError: cannot import name 'isin_mps_friendly' from 'transformers.pytorch_utils'
+#    → transformers<5 로 고정.
+#
+# ③ torch 2.9+ 에서 coqui-tts가 오디오 IO에 torchcodec을 요구하는데,
+#    torchcodec은 Windows에서 FFmpeg "full-shared" DLL을 따로 깔아야 로드된다.
+#      RuntimeError: Could not load libtorchcodec
+#    → torch<2.9 로 고정해 torchaudio 경로를 쓴다. FFmpeg 별도 설치가 필요 없다.
+#    → CUDA 장비에서 torchcodec을 쓰고 싶다면 FFmpeg full-shared를 설치하고 이 핀을 풀면 된다.
+
+coqui-tts>=0.27
+
+transformers>=4.57,<5
+
+# CUDA 장비에서는 인덱스를 지정한다:
+#   pip install "torch<2.9" "torchaudio<2.9" --index-url https://download.pytorch.org/whl/cu121
+torch<2.9
+torchaudio<2.9

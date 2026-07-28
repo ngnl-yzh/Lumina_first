@@ -1,0 +1,378 @@
+/* 미리내 · 모바일 전용 스타일
+ *
+ * 데스크톱 목업이 아니다. 실기기에서 전체 화면을 쓰고,
+ * 노치·홈바 영역은 safe-area-inset으로 피한다.
+ * 주 사용자가 고령층이므로 기본 글자 크기를 키우고 터치 타겟을 44px 이상으로 둔다.
+ */
+
+:root {
+  --paper: #edf1f4;
+  --surface: #ffffff;
+  --ink: #14202b;
+  --ink-2: #56636e;
+  --ink-3: #8794a0;
+  --rule: #e4ebf0;
+
+  --signal: #0d7a85; /* 모드 1 */
+  --perturb: #5e5a94; /* 모드 2 */
+  --gap: #a62f5b; /* 위험 */
+  --amber: #9a6410; /* 주의 */
+  --safe: #2e7d52;
+
+  --sans: "Pretendard Variable", Pretendard, -apple-system, "Apple SD Gothic Neo",
+    "Noto Sans KR", system-ui, sans-serif;
+  --mono: ui-monospace, "SF Mono", Menlo, monospace;
+
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  -webkit-tap-highlight-color: transparent;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: 16px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+  word-break: keep-all;
+  overscroll-behavior: none; /* 당겨서 새로고침 방지 — 녹음 중 새로고침되면 끝이다 */
+  user-select: none;
+}
+
+button {
+  font-family: inherit;
+  font-size: inherit;
+  border: none;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+  min-height: 44px; /* 고령층 터치 타겟 */
+}
+
+input {
+  font-family: inherit;
+  font-size: 16px; /* 16px 미만이면 iOS가 포커스 시 확대한다 */
+}
+
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding-top: var(--safe-top);
+  padding-bottom: var(--safe-bottom);
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 18px;
+  flex-shrink: 0;
+  color: #fff;
+}
+
+.brand {
+  font-size: 17px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+}
+
+.badge {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  padding: 3px 7px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.18);
+}
+
+.conn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.tabs {
+  display: flex;
+  flex-shrink: 0;
+  background: #f5f8fa;
+  border-bottom: 1px solid var(--rule);
+}
+
+.tab {
+  flex: 1;
+  padding: 9px 0 7px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  border-bottom: 2px solid transparent;
+  color: #b0bac5;
+  transition: color 0.15s;
+}
+
+.tab .icon {
+  font-size: 17px;
+  line-height: 1;
+}
+.tab .label {
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.screen {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 16px;
+}
+
+.card {
+  background: var(--surface);
+  border-radius: 16px;
+  padding: 14px 16px;
+  margin-bottom: 10px;
+}
+
+.card-title {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  margin-bottom: 8px;
+}
+
+.btn {
+  width: 100%;
+  padding: 16px;
+  border-radius: 16px;
+  font-size: 16px;
+  font-weight: 800;
+  color: #fff;
+  transition: transform 0.1s, opacity 0.15s;
+}
+.btn:active {
+  transform: scale(0.98);
+}
+.btn:disabled {
+  opacity: 0.45;
+}
+
+.btn-mode1 {
+  background: linear-gradient(135deg, #0d7a85, #0a6470);
+}
+.btn-mode2 {
+  background: linear-gradient(135deg, #5e5a94, #4a4674);
+}
+.btn-dark {
+  background: var(--ink);
+}
+
+.muted {
+  color: var(--ink-2);
+  font-size: 14px;
+}
+.small {
+  font-size: 12px;
+  color: var(--ink-3);
+}
+.mono {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.banner {
+  border-radius: 12px;
+  padding: 11px 14px;
+  font-size: 13px;
+  line-height: 1.5;
+  margin-bottom: 10px;
+}
+.banner-warn {
+  background: #f2dce4;
+  color: #7d2444;
+}
+.banner-note {
+  background: #f1e5d0;
+  color: #6f4a0c;
+}
+
+/* 개입 화면 — 통화 중 화면은 안 볼 수 있으므로 음성이 주고 화면은 보조다.
+   그래도 화면을 볼 때는 한눈에 들어와야 한다. */
+.intervene {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  background: linear-gradient(160deg, #c42a52 0%, #8a1f3e 100%);
+  color: #fff;
+  padding: calc(var(--safe-top) + 20px) 20px calc(var(--safe-bottom) + 20px);
+  animation: fade-in 0.25s ease;
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
+.intervene h1 {
+  font-size: 26px;
+  font-weight: 900;
+  letter-spacing: -0.03em;
+}
+
+.quote-box {
+  background: rgba(255, 255, 255, 0.14);
+  border-radius: 14px;
+  padding: 14px 16px;
+  margin: 14px 0;
+}
+
+.action-line {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 14px;
+  padding: 14px 16px;
+  margin-bottom: 8px;
+  font-size: 17px; /* 고령층 — 각성 상태에서의 가독성 */
+  font-weight: 700;
+  line-height: 1.4;
+}
+
+.hangup {
+  width: 100%;
+  padding: 18px;
+  border-radius: 16px;
+  background: #fff;
+  color: var(--gap);
+  font-size: 19px;
+  font-weight: 900;
+}
+
+.stage-row {
+  display: flex;
+  gap: 4px;
+}
+.stage {
+  flex: 1;
+  border-radius: 9px;
+  padding: 7px 0 5px;
+  text-align: center;
+  transition: background 0.3s, transform 0.3s;
+}
+.stage .sid {
+  font-size: 10px;
+  font-weight: 900;
+  display: block;
+}
+.stage .sname {
+  font-size: 8px;
+  display: block;
+}
+
+.bar {
+  height: 8px;
+  border-radius: 4px;
+  background: #edf1f4;
+  overflow: hidden;
+  position: relative;
+}
+.bar > span {
+  display: block;
+  height: 100%;
+  border-radius: 4px;
+  transition: width 0.5s ease;
+}
+
+.utt {
+  background: var(--surface);
+  border-radius: 14px;
+  border-top-left-radius: 4px;
+  padding: 12px 14px;
+  margin-bottom: 8px;
+  font-size: 15px;
+  line-height: 1.5;
+}
+.utt mark {
+  background: #ffe4ec;
+  color: var(--gap);
+  font-weight: 800;
+  border-radius: 3px;
+  padding: 0 2px;
+}
+
+.chunk-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+.chunk {
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 9px;
+  font-weight: 800;
+  color: #fff;
+}
+
+.field {
+  width: 100%;
+  padding: 11px 13px;
+  border-radius: 12px;
+  border: 1px solid var(--rule);
+  background: #f8fafb;
+  font-family: var(--mono);
+  font-size: 14px;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 0;
+  border-bottom: 1px solid #edf1f4;
+  gap: 12px;
+}
+.row:last-child {
+  border-bottom: none;
+}

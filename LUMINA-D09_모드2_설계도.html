@@ -1,0 +1,566 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LUMINA-D09 · 모드 2 설계도 — 딥보이스 학습 방지</title>
+<link rel="preconnect" href="https://cdn.jsdelivr.net">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable.min.css">
+<style>
+:root{--paper:#EDF1F4;--surface:#F8FAFB;--surface-2:#E3E9ED;--ink:#14202B;--ink-2:#56636E;--ink-3:#8794A0;
+--signal:#0D7A85;--gap:#A62F5B;--perturb:#5E5A94;--amber:#9A6410;
+--signal-w:#D9EAEC;--gap-w:#F2DCE4;--perturb-w:#E2E0EE;--amber-w:#F1E5D0;--rule:#C4CCD3;--rule-2:#DDE3E8;
+--sans:'Pretendard Variable',Pretendard,-apple-system,'Apple SD Gothic Neo','Malgun Gothic','Noto Sans KR',system-ui,sans-serif;
+--mono:ui-monospace,'SF Mono','JetBrains Mono','Menlo',monospace}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--paper);color:var(--ink);font-family:var(--sans);font-size:15px;line-height:1.75;
+-webkit-font-smoothing:antialiased;letter-spacing:-.01em;word-break:keep-all;overflow-wrap:break-word}
+.tickbar{position:fixed;top:0;left:0;right:0;height:9px;z-index:60;background:var(--perturb);
+background-image:repeating-linear-gradient(90deg,rgba(255,255,255,.55) 0 1px,transparent 1px 16px)}
+.wrap{max-width:1080px;margin:0 auto;padding:0 32px}
+header{padding:88px 0 0}
+.docmeta{font-family:var(--mono);font-size:11px;letter-spacing:.1em;color:var(--ink-3);text-transform:uppercase;
+display:flex;flex-wrap:wrap;gap:8px 22px;padding-bottom:14px;border-bottom:1px solid var(--rule)}
+.docmeta b{color:var(--perturb);font-weight:600}
+h1{font-size:clamp(28px,4.6vw,45px);font-weight:800;letter-spacing:-.035em;line-height:1.17;margin:34px 0 0;max-width:21ch}
+h1 em{font-style:normal;color:var(--perturb)}
+.lede{margin:26px 0 0;font-size:clamp(16px,2vw,18.5px);line-height:1.68;color:var(--ink-2);max-width:62ch}
+.lede strong{color:var(--ink);font-weight:600}
+.hdr-rule{height:1px;background:var(--rule);margin:50px 0 0}
+section{padding:58px 0;border-bottom:1px solid var(--rule-2)}
+.eyebrow{font-family:var(--mono);font-size:11px;letter-spacing:.14em;color:var(--perturb);text-transform:uppercase;
+margin-bottom:12px;display:flex;align-items:center;gap:10px}
+.eyebrow::before{content:'';width:22px;height:1px;background:var(--perturb);flex:none}
+h2{font-size:clamp(22px,3.2vw,31px);font-weight:750;letter-spacing:-.03em;line-height:1.28;margin-bottom:14px;max-width:26ch}
+h3{font-size:17px;font-weight:700;letter-spacing:-.022em;margin:38px 0 12px;padding-top:16px;border-top:1px solid var(--rule-2)}
+h3:first-of-type{margin-top:28px}
+h3 .hn{font-family:var(--mono);font-size:12px;color:var(--ink-3);margin-right:9px;font-weight:500}
+h4{font-size:14.5px;font-weight:700;margin:22px 0 8px;letter-spacing:-.015em}
+p{margin-bottom:14px;max-width:70ch}
+strong{font-weight:650}.muted{color:var(--ink-2)}.small{font-size:13.5px;line-height:1.68}
+code{font-family:var(--mono);font-size:12.6px;background:var(--surface-2);padding:1px 5px}
+.tw{overflow-x:auto;margin:20px 0}
+table{width:100%;border-collapse:collapse;font-size:13.3px;min-width:560px}
+th{text-align:left;font-family:var(--mono);font-size:10.5px;letter-spacing:.09em;text-transform:uppercase;
+color:var(--ink-3);font-weight:500;padding:0 11px 8px;border-bottom:1.5px solid var(--ink);vertical-align:bottom}
+td{padding:10px 11px;border-bottom:1px solid var(--rule-2);vertical-align:top;line-height:1.6}
+tbody tr:hover{background:var(--surface)}
+td.num{font-family:var(--mono);font-variant-numeric:tabular-nums;white-space:nowrap}
+td.k{font-weight:640}
+.t-sig{color:var(--signal);font-weight:640}.t-gap{color:var(--gap);font-weight:640}
+.t-per{color:var(--perturb);font-weight:640}.t-amb{color:var(--amber);font-weight:640}
+.call{border-left:3px solid var(--perturb);background:var(--surface);padding:17px 20px;margin:22px 0;font-size:14px;line-height:1.7}
+.call p:last-child{margin-bottom:0}
+.call.warn{border-left-color:var(--gap);background:var(--gap-w)}
+.call.note{border-left-color:var(--amber);background:var(--amber-w)}
+.call.per{background:var(--perturb-w)}
+.call-h{font-family:var(--mono);font-size:10.5px;letter-spacing:.11em;text-transform:uppercase;color:var(--ink-2);margin-bottom:7px;display:block}
+pre{font-family:var(--mono);font-size:12px;line-height:1.7;background:var(--ink);color:#DCE4EA;
+padding:17px 19px;overflow-x:auto;margin:16px 0;white-space:pre}
+pre .c{color:#7E8F9C}pre .k{color:#7FD1D9}pre .v{color:#C9A2E0}pre .n{color:#E0B074}
+pre .bad{color:#E88BA6}pre .good{color:#8ED4A8}
+.layers{margin:24px 0}
+.layer{border:1px solid var(--rule);background:var(--surface);margin-bottom:5px;display:grid;grid-template-columns:166px 1fr}
+.layer-k{padding:16px 18px;border-right:1px solid var(--rule-2);background:var(--surface-2)}
+.layer-n{font-family:var(--mono);font-size:10px;letter-spacing:.11em;color:var(--ink-3);display:block;margin-bottom:5px}
+.layer-t{font-size:15px;font-weight:720;letter-spacing:-.025em;line-height:1.3}
+.layer-s{font-size:11.5px;color:var(--ink-2);margin-top:5px;line-height:1.45}
+.layer-v{padding:15px 18px}
+.layer.protect .layer-k{background:var(--signal-w)}
+.layer.target .layer-k{background:var(--perturb-w)}
+.layer.defeat .layer-k{background:var(--gap-w)}
+.pipe{margin:22px 0;border:1px solid var(--rule);background:var(--surface);padding:20px 22px}
+.pipe-t{font-family:var(--mono);font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-2);
+margin-bottom:14px;padding-bottom:10px;border-bottom:1px solid var(--rule-2)}
+.step{display:grid;grid-template-columns:26px 1fr;gap:13px;padding:9px 0;border-bottom:1px solid var(--rule-2)}
+.step:last-child{border-bottom:none}
+.step-n{font-family:var(--mono);font-size:11px;color:#fff;background:var(--signal);width:22px;height:22px;
+display:flex;align-items:center;justify-content:center;margin-top:2px}
+.step.srv .step-n{background:var(--perturb)}
+.step.loop .step-n{background:var(--amber)}
+.step-b h4{margin:0 0 3px;font-size:14px}
+.step-b p{margin:0;font-size:12.8px;color:var(--ink-2);line-height:1.6;max-width:none}
+.tl{border:1px solid var(--rule);background:var(--surface);padding:20px 22px;margin:24px 0;overflow-x:auto}
+.tl-in{min-width:700px}
+.tl-t{font-family:var(--mono);font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-2);margin-bottom:16px}
+.tl-r{display:grid;grid-template-columns:92px 1fr;gap:12px;align-items:center;margin-bottom:7px}
+.tl-l{font-family:var(--mono);font-size:10.5px;color:var(--ink-2);text-align:right}
+.tl-bar{position:relative;height:22px;background:var(--surface-2)}
+.tl-seg{position:absolute;top:0;bottom:0;display:flex;align-items:center;justify-content:center;
+font-family:var(--mono);font-size:9px;color:#fff}
+.tl-seg.rec{background:var(--signal)}.tl-seg.proc{background:var(--perturb)}
+.tl-seg.idle{background:var(--rule);color:var(--ink-3)}
+.tl-axis{display:grid;grid-template-columns:92px 1fr;gap:12px;margin-top:10px}
+.tl-ticks{display:flex;justify-content:space-between;font-family:var(--mono);font-size:10px;color:var(--ink-3);
+border-top:1px solid var(--rule);padding-top:4px}
+.mods{margin:22px 0}
+.mod{display:grid;grid-template-columns:64px 158px 1fr 1fr;border-top:1px solid var(--rule-2);font-size:13px}
+.mod:last-child{border-bottom:1px solid var(--rule-2)}
+.mod-w{font-family:var(--mono);font-size:10px;padding:11px 8px 11px 0;color:var(--ink-3);letter-spacing:.06em}
+.mod-f{font-family:var(--mono);font-size:12px;padding:11px 12px 11px 0;color:var(--perturb);font-weight:600}
+.mod-i,.mod-o{padding:11px 12px;color:var(--ink-2);border-left:1px solid var(--rule-2);line-height:1.55}
+.mod-h{display:grid;grid-template-columns:64px 158px 1fr 1fr;font-family:var(--mono);font-size:10px;letter-spacing:.09em;
+text-transform:uppercase;color:var(--ink-3);padding-bottom:7px;border-bottom:1.5px solid var(--ink)}
+.mod-h span:nth-child(n+3){padding-left:12px}
+.tags{display:flex;flex-wrap:wrap;gap:5px;margin:10px 0}
+.tag{font-family:var(--mono);font-size:10.5px;padding:3px 8px;background:var(--surface-2);color:var(--ink-2);border:1px solid var(--rule-2)}
+.tag.on{background:var(--perturb);color:#fff;border-color:var(--perturb)}
+.tag.off{opacity:.55;text-decoration:line-through}
+footer{padding:48px 0 70px;font-size:12.5px;color:var(--ink-3);line-height:1.75}
+footer .f-rule{height:1px;background:var(--rule);margin-bottom:22px}
+footer b{color:var(--ink-2);font-weight:600}
+@media (max-width:860px){.wrap{padding:0 20px}header{padding-top:60px}section{padding:44px 0}
+.layer{grid-template-columns:1fr}.layer-k{border-right:none;border-bottom:1px solid var(--rule-2)}
+.mod,.mod-h{grid-template-columns:1fr}.mod-i,.mod-o{border-left:none;padding-left:0}}
+@media print{.tickbar{display:none}body{background:#fff;font-size:10pt}section,.call,.pipe,.tl{page-break-inside:avoid}}
+</style>
+</head>
+<body>
+<div class="tickbar"></div>
+<div class="wrap">
+
+<header>
+  <div class="docmeta">
+    <span>Team Lumina</span><span>전남대학교 인공지능학부</span>
+    <span><b>모드 2 설계도</b></span><span>LUMINA-D09</span><span>모바일 + 서버</span><span>2026.07.28</span>
+  </div>
+  <h1>말하는 동안 이미 <em>보호</em>되어 나온다</h1>
+  <p class="lede">
+    모드 2는 화자 인코더가 뽑아내는 <strong>임베딩 벡터</strong>를 표적으로 삼아, 음성이 공개되기 전에 복제를 실패시킨다.
+    발화를 2초 청크로 잘라 녹음과 동시에 처리하므로,
+    말이 끝나면 <strong>0.5초 뒤</strong>에 보호된 파일이 나온다.
+  </p>
+  <div class="hdr-rule"></div>
+</header>
+
+<!-- 01 -->
+<section>
+  <div class="eyebrow">01 · 잡을 대상</div>
+  <h2>지키는 것, 공략하는 것, 실패시키는 것</h2>
+  <p>모드 2의 “대상”은 하나가 아니라 셋이다. 구분하지 않으면 설계 논의가 계속 어긋난다.</p>
+
+  <div class="layers">
+    <div class="layer protect">
+      <div class="layer-k"><span class="layer-n">LAYER 1 · ASSET</span><span class="layer-t">보호 자산</span>
+        <span class="layer-s">우리가 지키는 것<br>= 사용자 본인 음성</span></div>
+      <div class="layer-v">
+        <div class="tw" style="margin:0"><table style="min-width:0">
+          <thead><tr><th>용도</th><th class="num">대역</th><th>개입 가능성</th><th class="num">본 MVP</th></tr></thead>
+          <tbody>
+            <tr><td class="k">앱에서 직접 녹음</td><td class="num">광대역 16k</td><td class="t-sig">완전 통제 — 발화 시점에 개입</td><td class="num t-per">구현</td></tr>
+            <tr><td class="k">메신저 음성메시지</td><td class="num">협대역~중간</td><td class="t-sig">가능 — 보호본을 내보내 전송</td><td class="num t-per">구현</td></tr>
+            <tr><td class="k">SNS 업로드용 녹음</td><td class="num">광대역</td><td class="t-sig">가능 — 보호본을 업로드</td><td class="num t-per">구현</td></tr>
+            <tr><td class="k">기존 통화 녹음</td><td class="num">협대역</td><td class="t-gap">불가 — 통신 경로 개입 필요</td><td class="num muted">범위 밖</td></tr>
+            <tr><td class="k">양방향 실시간 통화</td><td class="num">협대역</td><td class="t-gap">불가 — 지연 제약 (3장)</td><td class="num muted">범위 밖</td></tr>
+          </tbody>
+        </table></div>
+      </div>
+    </div>
+
+    <div class="layer target">
+      <div class="layer-k"><span class="layer-n">LAYER 2 · TARGET</span><span class="layer-t">최적화 표적</span>
+        <span class="layer-s">우리가 공략하는 것<br>= 화자 인코더</span></div>
+      <div class="layer-v">
+        <div class="tw" style="margin:0"><table style="min-width:0">
+          <thead><tr><th>인코더</th><th class="num">파라미터</th><th class="num">임베딩</th><th>역할</th></tr></thead>
+          <tbody>
+            <tr><td class="k">Resemblyzer</td><td class="num">1.4M</td><td class="num">256</td><td class="t-per">1차 최적화 · 실시간 처리 담당 — 가벼워 200스텝 가능</td></tr>
+            <tr><td class="k">ECAPA-TDNN</td><td class="num">22.15M</td><td class="num">192</td><td class="t-per">전이성 검증 · 앙상블 2번째 축</td></tr>
+            <tr><td class="k">x-vector</td><td class="num">~4M</td><td class="num">512</td><td class="muted">Leave-One-Out 평가용 · P1</td></tr>
+            <tr><td class="k">XTTS-v2 conditioning</td><td class="num muted">비공개</td><td class="num muted">—</td><td class="t-gap">최종 검증 표적 — gradient 접근 여부가 최대 리스크</td></tr>
+          </tbody>
+        </table></div>
+        <p class="small muted" style="margin:11px 0 0">
+          앞의 셋은 화이트박스이고 마지막은 미확인이다. 미확인이면 사실상 <strong>블랙박스 전이 공격</strong>이며,
+          앙상블이 유일한 대비책이다. D1~D2 스파이크에서 먼저 확인한다.
+        </p>
+      </div>
+    </div>
+
+    <div class="layer defeat">
+      <div class="layer-k"><span class="layer-n">LAYER 3 · ATTACK</span><span class="layer-t">무력화 대상</span>
+        <span class="layer-s">실패시키려는 것<br>= 복제 기술</span></div>
+      <div class="layer-v">
+        <div class="tw" style="margin:0"><table style="min-width:0">
+          <thead><tr><th class="num">세대</th><th>대표 모델</th><th class="num">필요 음성</th><th>본 프로젝트</th></tr></thead>
+          <tbody>
+            <tr><td class="num k">2세대 제로샷</td><td>XTTS-v2 · YourTTS · OpenVoice · VALL-E</td><td class="num">수 초</td><td class="t-per"><strong>주 표적</strong> — 대량·신속 범죄 요건에 부합</td></tr>
+            <tr><td class="num k">1세대 인코더 조건부</td><td>SV2TTS · AutoVC · AdaIN-VC</td><td class="num">수 초</td><td class="t-sig">부수 커버 — 구조 동일</td></tr>
+            <tr><td class="num k">3세대 fine-tuning</td><td>RVC · So-VITS-SVC</td><td class="num">수 분~</td><td class="muted">범위 밖 — SafeSpeech 노선</td></tr>
+            <tr><td class="num k">5세대 LLM E2E</td><td>CosyVoice · 상용 API</td><td class="num">수 초</td><td class="muted">범위 밖 — E2E-VGuard 노선</td></tr>
+          </tbody>
+        </table></div>
+        <div class="tags">
+          <span class="tag on">2세대 제로샷 = 방어 대상</span><span class="tag">1세대 = 부수 커버</span>
+          <span class="tag off">3세대 fine-tuning</span><span class="tag off">5세대 LLM E2E</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 02 -->
+<section>
+  <div class="eyebrow">02 · 원리</div>
+  <h2>임베딩을 틀어놓으면 다른 목소리가 나온다</h2>
+  <div class="tw"><table>
+    <thead><tr><th style="width:20%">개념</th><th style="width:34%">무엇인가</th><th>역할</th></tr></thead>
+    <tbody>
+      <tr><td class="k t-per">화자 임베딩</td><td>음성에서 <em>누가 말했는지</em>만 뽑아 고정 길이 벡터로 압축</td><td><strong>제로샷 복제는 이 벡터를 조건으로 생성한다.</strong> 벡터만 틀어지면 합성 결과 전체가 다른 목소리가 된다</td></tr>
+      <tr><td class="k t-per">적대적 섭동</td><td>귀에는 차이가 없지만 모델 출력은 크게 바꾸는 정밀 계산된 미세 신호</td><td>무작위 잡음은 임베딩을 잘 못 흔든다. 섭동은 <strong>가장 크게 흔들리는 방향</strong>에만 힘을 쓴다</td></tr>
+      <tr><td class="k">PGD</td><td>gradient 이동 → 허용 범위 밖이면 되돌림(투영) 반복</td><td>“제약 안에서 최대한 강하게”가 목표이므로 <strong>투영이 본질</strong></td></tr>
+      <tr><td class="k">심리음향 마스킹</td><td>큰 소리 옆의 작은 소리는 안 들린다. Bark 25대역별 임계값</td><td>섭동의 <strong>형상과 크기</strong>를 결정. 손실이 방향을, 마스킹이 크기를 정한다</td></tr>
+      <tr><td class="k">전이성</td><td>A를 속이는 섭동이 B에서도 통하는 성질</td><td>한 모델만 속이면 방어가 아니라 <strong>과적합</strong></td></tr>
+      <tr><td class="k t-gap">정화 공격</td><td>디노이징으로 섭동을 걷어내는 역공격</td><td class="t-gap">구조적 취약점. <strong>위협모델 1단계로 명시</strong>하고 향후 과제로 남긴다</td></tr>
+      <tr><td class="k">SRS · DSR</td><td>임베딩 코사인 유사도 · 화자검증기의 “다른 사람” 판정 비율</td><td>SRS는 튜닝에, DSR은 보고에 쓴다</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<!-- 03 -->
+<section>
+  <div class="eyebrow">03 · 연산 위치</div>
+  <h2>왜 서버에서 처리하는가</h2>
+
+  <div class="call warn">
+    <span class="call-h">폰에서 PGD를 돌릴 수 없다 — 두 가지 이유</span>
+    <p><strong>① 연산량</strong></p>
+    <div class="tw" style="margin:10px 0"><table style="min-width:0">
+      <thead><tr><th>환경</th><th class="num">FP32 실효</th><th class="num">2초 청크 200스텝</th><th class="num">실시간 배수</th></tr></thead>
+      <tbody>
+        <tr><td class="k t-sig">RTX 3060 (서버)</td><td class="num">8,000 GF</td><td class="num t-sig">0.36s</td><td class="num t-sig">0.4×</td></tr>
+        <tr><td class="k">플래그십 폰 GPU</td><td class="num">400 GF</td><td class="num t-gap">7.27s</td><td class="num t-gap">7.3×</td></tr>
+        <tr><td class="k">중급 폰 GPU</td><td class="num">150 GF</td><td class="num t-gap">19.39s</td><td class="num t-gap">19.4×</td></tr>
+        <tr><td class="k">폰 CPU</td><td class="num">40 GF</td><td class="num t-gap">72.70s</td><td class="num t-gap">72.7×</td></tr>
+      </tbody>
+    </table></div>
+    <p>hop 1.0초마다 청크가 발생하므로 실시간 배수가 1.0 미만이어야 적체가 없다.
+    <strong>폰에서는 최상급이어도 7.3배 느려 큐가 무한히 쌓인다.</strong></p>
+    <p style="margin-top:10px"><strong>② 역전파 미지원</strong> — CoreML · TFLite · ONNX Runtime Mobile은 추론만 지원한다.
+    PGD는 gradient가 필수다. <strong>FLOPS 이전의 구조적 문제이며 하드웨어가 좋아져도 해결되지 않는다.</strong></p>
+  </div>
+
+  <h3><span class="hn">3.1</span>서버 왕복 지연 예산</h3>
+  <div class="tw"><table>
+    <thead><tr><th style="width:30%">구간</th><th class="num" style="width:100px">WiFi</th><th class="num" style="width:100px">LTE</th><th class="num" style="width:100px">5G</th></tr></thead>
+    <tbody>
+      <tr><td class="k">업로드 64 KB</td><td class="num">0.03s</td><td class="num">0.09s</td><td class="num">0.02s</td></tr>
+      <tr><td class="k">서버 PGD 200스텝</td><td class="num">0.36s</td><td class="num">0.36s</td><td class="num">0.36s</td></tr>
+      <tr><td class="k">다운로드 64 KB</td><td class="num">0.03s</td><td class="num">0.09s</td><td class="num">0.02s</td></tr>
+      <tr><td class="k">프로토콜 오버헤드</td><td class="num">0.05s</td><td class="num">0.12s</td><td class="num">0.04s</td></tr>
+      <tr><td class="k t-per">발화 후 총 대기</td><td class="num t-per">0.47s</td><td class="num t-per">0.66s</td><td class="num t-per">0.44s</td></tr>
+    </tbody>
+  </table></div>
+  <p class="small muted">
+    2초 청크는 16 kHz 모노 16 bit로 64 KB다. 어느 회선에서든 1초 이내이며, 시연은 같은 WiFi에 서버를 두므로 0.5초다.
+    <strong>본인 음성을 본인 동의로 처리하므로 서버 전송에 개인정보 쟁점이 없다.</strong>
+  </p>
+
+  <h3><span class="hn">3.2</span>양방향 통화를 범위 밖에 두는 이유</h3>
+  <p>
+    ITU-T G.114는 편도 지연 400 ms를 넘으면 대화가 겹치기 시작한다고 본다.
+    PGD는 Resemblyzer의 partial utterance가 1.6초여서 <strong>청크를 아무리 줄여도 1,600 ms 밑으로 못 내려간다</strong> — 기준의 4배다.
+    양방향 통화를 하려면 UFP 사전패치(지연 20 ms)로 전환해야 하는데 방어 강도가 크게 떨어진다.
+  </p>
+  <div class="call per">
+    <span class="call-h">단일 화자 녹음이라 제약이 사라진다</span>
+    <p>모드 2는 대화 상대가 없으므로 G.114 기준이 적용되지 않는다.
+    덕분에 <strong>PGD 200스텝 풀 강도를 그대로 쓴다</strong> — 표준의 2배다.
+    양방향 통화 구조였다면 포기해야 했을 성능이다.</p>
+  </div>
+</section>
+
+<!-- 04 -->
+<section>
+  <div class="eyebrow">04 · 파이프라인</div>
+  <h2>청크 파이프라인</h2>
+
+  <div class="tw"><table>
+    <thead><tr><th style="width:26%">파라미터</th><th class="num" style="width:130px">확정값</th><th>근거</th></tr></thead>
+    <tbody>
+      <tr><td class="k">청크 길이</td><td class="num t-per">2.0초</td><td>Resemblyzer partial utterance 1.6초 → 2.0초면 <strong>온전한 임베딩 1.25개</strong>. 1.5초 이하는 임베딩이 부정확해진다</td></tr>
+      <tr><td class="k">PGD 스텝</td><td class="num t-per">200</td><td>서버 여유가 커서 표준 100의 <strong>2배</strong></td></tr>
+      <tr><td class="k">겹침</td><td class="num">50% · hop 1.0초</td><td>경계 불연속(클릭 노이즈) 방지 — Hann 창 overlap-add</td></tr>
+      <tr><td class="k">청크당 처리</td><td class="num">0.36초</td><td>hop 1.0초 대비 0.36× — 녹음 속도를 앞지른다</td></tr>
+      <tr><td class="k t-sig">여유율</td><td class="num t-sig">64%</td><td>적체 없음. 발화가 길어져도 큐가 쌓이지 않는다</td></tr>
+      <tr><td class="k t-per">발화 후 대기</td><td class="num t-per">0.5초</td><td><strong>발화 길이와 무관</strong> — 마지막 청크 하나만 남는다</td></tr>
+    </tbody>
+  </table></div>
+
+  <div class="tl"><div class="tl-in">
+    <div class="tl-t">10초 발화 예시 · 녹음과 처리가 동시에 진행된다</div>
+    <div class="tl-r"><span class="tl-l">폰 · 녹음</span>
+      <div class="tl-bar"><div class="tl-seg rec" style="left:0;width:90.9%">마이크 입력 · 연속 10.0초</div>
+        <div class="tl-seg idle" style="left:90.9%;width:9.1%">종료</div></div></div>
+    <div class="tl-r"><span class="tl-l">청크 커밋</span>
+      <div class="tl-bar">
+        <div class="tl-seg proc" style="left:9.1%;width:2.2%"></div><div class="tl-seg proc" style="left:18.2%;width:2.2%"></div>
+        <div class="tl-seg proc" style="left:27.3%;width:2.2%"></div><div class="tl-seg proc" style="left:36.4%;width:2.2%"></div>
+        <div class="tl-seg proc" style="left:45.5%;width:2.2%"></div><div class="tl-seg proc" style="left:54.5%;width:2.2%"></div>
+        <div class="tl-seg proc" style="left:63.6%;width:2.2%"></div><div class="tl-seg proc" style="left:72.7%;width:2.2%"></div>
+        <div class="tl-seg proc" style="left:81.8%;width:2.2%"></div></div></div>
+    <div class="tl-r"><span class="tl-l">서버 · PGD</span>
+      <div class="tl-bar">
+        <div class="tl-seg proc" style="left:9.1%;width:4.3%"></div><div class="tl-seg proc" style="left:18.2%;width:4.3%"></div>
+        <div class="tl-seg proc" style="left:27.3%;width:4.3%"></div><div class="tl-seg proc" style="left:36.4%;width:4.3%"></div>
+        <div class="tl-seg proc" style="left:45.5%;width:4.3%"></div><div class="tl-seg proc" style="left:54.5%;width:4.3%"></div>
+        <div class="tl-seg proc" style="left:63.6%;width:4.3%"></div><div class="tl-seg proc" style="left:72.7%;width:4.3%"></div>
+        <div class="tl-seg proc" style="left:81.8%;width:4.3%"></div>
+        <div class="tl-seg proc" style="left:90.9%;width:4.3%">★</div></div></div>
+    <div class="tl-axis"><span></span><div class="tl-ticks">
+      <span>0s</span><span>2s</span><span>4s</span><span>6s</span><span>8s</span><span>10s</span><span>10.5s</span></div></div>
+  </div></div>
+  <p class="small muted">
+    ★ 가 마지막 청크의 처리다. 녹음이 끝난 시점에 남은 작업은 이것 하나뿐이므로
+    <strong>10.5초에 보호 파일이 완성된다.</strong> 발화가 60초여도 대기 시간은 동일하다.
+  </p>
+
+  <h3><span class="hn">4.1</span>청크 방식이 오히려 유리한 이유</h3>
+  <div class="call per">
+    <span class="call-h">공격자는 임의 구간을 잘라 쓴다</span>
+    <p>공격자가 20초 녹음에서 <strong>어느 6초를 참조로 쓸지 우리는 모른다.</strong>
+    발화 전체를 한 번에 최적화하면 <em>전체 평균 임베딩</em>이 흔들리도록 맞춰지므로 특정 구간만 잘라내면 보호가 약해질 수 있다.
+    반면 청크별 최적화 + 50% 겹침은 <strong>모든 2초 창이 각각 보호</strong>된다.
+    청크 방식은 실시간을 위한 타협이 아니라 <strong>발췌 공격에 더 강한 구조</strong>다.</p>
+  </div>
+
+  <h3><span class="hn">4.2</span>처리 흐름</h3>
+  <div class="pipe">
+    <div class="pipe-t">폰(파랑) + 서버(보라)</div>
+    <div class="step"><span class="step-n">1</span><div class="step-b"><h4>마이크 입력 · 링버퍼</h4>
+      <p>MediaRecorder API. 16 kHz 모노. 1.0초마다 2.0초 청크를 커밋.</p></div></div>
+    <div class="step srv"><span class="step-n">2</span><div class="step-b"><h4>WebSocket 업로드</h4>
+      <p>청크 + 순번. 유실 시 재전송.</p></div></div>
+    <div class="step srv"><span class="step-n">3</span><div class="step-b"><h4>VAD · Bark 25대역 마스킹 임계값</h4>
+      <p>발화 구간 검출(페이드 포함), 프레임별 “여기까지는 안 들린다” 상한 계산.</p></div></div>
+    <div class="step loop"><span class="step-n">↻</span><div class="step-b"><h4>PGD 200스텝</h4>
+      <p>임베딩 손실 → gradient → 스텝 → <strong>SNR 정규화 → 마스킹 투영</strong> → 대역 제한 → VAD 마스크.</p></div></div>
+    <div class="step srv"><span class="step-n">4</span><div class="step-b"><h4>대조군 4종 생성</h4>
+      <p>백색잡음 · 대역제한잡음 · 셔플 섭동 · 무섭동을 같은 SNR로 동시 생성.</p></div></div>
+    <div class="step"><span class="step-n">5</span><div class="step-b"><h4>폰 · Hann overlap-add 조립</h4>
+      <p>청크별 δ를 겹쳐 더해 보호 파형 누적. 파형 뷰에 실시간 반영.</p></div></div>
+    <div class="step"><span class="step-n">6</span><div class="step-b"><h4>저장 · 리포트</h4>
+      <p>보호 WAV + 메타데이터 JSON(파라미터·SNR·가청도·SRS).</p></div></div>
+  </div>
+
+<pre><span class="c"># 서버 · 청크 단위 PGD</span>
+delta = zeros_like(x)
+thr   = masking_threshold(x)          <span class="c"># Bark 25대역, 프레임별</span>
+vad   = detect_speech(x, frame=<span class="v">10</span>)
+
+<span class="k">for</span> step <span class="k">in</span> range(<span class="v">200</span>):
+    loss  = <span class="n">-</span>cosine_distance(E(x + delta), E(x))   <span class="c"># untargeted</span>
+    g     = grad(loss, delta)
+    delta = delta <span class="n">-</span> alpha <span class="n">*</span> sign(g)
+
+    <span class="good">delta = normalize_snr(delta, x, target_db)</span>     <span class="c">← 먼저 크기 고정</span>
+    <span class="good">delta = project_masking(delta, thr, ratio)</span>     <span class="c">← 그 다음 제약</span>
+    delta = bandpass(delta, <span class="v">300</span>, <span class="v">3400</span>) <span class="n">*</span> fade(vad)
+
+<span class="k">assert</span> (abs(stft(delta)) &lt;= thr<span class="n">*</span>ratio + eps).all()   <span class="c"># 불변식</span>
+<span class="k">assert</span> <span class="k">not</span> isnan(delta).any()
+</pre>
+
+  <div class="call warn">
+    <span class="call-h">검증에서 확인된 결함 2건 — 반드시 반영</span>
+    <p><strong>① 정규화 순서</strong> · 정규화를 루프 <em>밖</em>에 두면 섭동이 마스킹 임계값 밖으로 밀려난다.
+    실측 결과 <strong>샘플의 94.9%가 위반, 최대 14.3배 초과</strong>했다. “안 들린다”는 보장이 사라진다.</p>
+    <p style="margin-top:10px"><strong>② 투영식 0-나눗셈</strong> · <code>D/abs(D)</code>는 무음 구간에서 NaN을 만들고,
+    NaN은 ISTFT에서 프레임 전체로 번져 <strong>에러 없이 최적화가 멈춘다.</strong></p>
+<pre style="margin:10px 0 0"><span class="bad">- D = D / abs(D) * minimum(abs(D), thr * ratio)</span>
+<span class="good">+ mag = abs(D)</span>
+<span class="good">+ D   = where(mag &gt; <span class="v">1e-12</span>,</span>
+<span class="good">+             D / maximum(mag, <span class="v">1e-12</span>) * minimum(mag, thr * ratio), <span class="v">0</span>)</span></pre>
+  </div>
+
+  <h3><span class="hn">4.3</span>경계 처리</h3>
+  <div class="tw"><table>
+    <thead><tr><th style="width:24%">문제</th><th style="width:32%">원인</th><th>처리</th></tr></thead>
+    <tbody>
+      <tr><td class="k">청크 경계 클릭음</td><td>인접 청크의 섭동이 불연속</td><td>Hann 창 50% overlap-add</td></tr>
+      <tr><td class="k">VAD 경계 클릭음</td><td><code>delta * vad_mask</code>가 계단식으로 끊김</td><td>마스크 경계에 <strong>5~10 ms 페이드</strong></td></tr>
+      <tr><td class="k">첫·마지막 청크</td><td>겹칠 상대가 없어 창 보정 불완전</td><td>양 끝은 창을 반쪽만 적용해 진폭 보존</td></tr>
+      <tr><td class="k">SNR 일관성</td><td>청크마다 정규화하면 전체 SNR이 흔들림</td><td>청크별 목표를 동일하게 두고 최종 파형에서 <strong>전역 SNR 재측정·보고</strong></td></tr>
+      <tr><td class="k">네트워크 유실</td><td>청크 순번이 어긋남</td><td>순번 관리 + 재전송. 최악의 경우 <strong>일괄 업로드로 폴백</strong></td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<!-- 05 -->
+<section>
+  <div class="eyebrow">05 · 파라미터 · 모듈</div>
+  <h2>확정값</h2>
+  <div class="tw"><table>
+    <thead><tr><th style="width:22%">항목</th><th style="width:28%">확정값</th><th>근거</th></tr></thead>
+    <tbody>
+      <tr><td class="k">최적화 도메인</td><td class="num">시간 도메인 (파형)</td><td>Voice Guard — STFT 왕복 손실 회피</td></tr>
+      <tr><td class="k">알고리즘</td><td class="num">PGD</td><td>표준 방식</td></tr>
+      <tr><td class="k">목적함수</td><td class="num">untargeted</td><td>구현 단순, 타깃 화자 불필요. <strong>이중 용도 우려도 낮춤</strong></td></tr>
+      <tr><td class="k">지각 제약</td><td class="num">Bark 25대역 마스킹 임계값</td><td>Zwicker &amp; Fastl</td></tr>
+      <tr><td class="k t-gap">마스킹 배율</td><td class="num t-gap">청취 평가 후 결정</td><td class="t-gap">선행연구 권장 0.75에서 자체 실험 DSR 0%. <strong>가청도 상한을 먼저 정한 뒤 역산</strong></td></tr>
+      <tr><td class="k">주입 대역</td><td class="num">300 ~ 3400 Hz</td><td>통화 대역. 밖은 코덱에서 제거됨</td></tr>
+      <tr><td class="k">VAD</td><td class="num">에너지 기반 10 ms + 페이드</td><td>무음 노이즈 부각 및 경계 클릭 방지</td></tr>
+      <tr><td class="k">크기 통제</td><td class="num">목표 SNR ≥ 20 dB</td><td><strong>정규화는 루프 안, 투영 앞</strong></td></tr>
+      <tr><td class="k">앙상블</td><td class="num">Resemblyzer + ECAPA</td><td>전이성 확보 — AntiFake 노선</td></tr>
+      <tr><td class="k">위협모델</td><td class="num">1단계 비적응 공격자</td><td>정화 공격은 향후 과제로 명시</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3><span class="hn">5.1</span>모듈 명세</h3>
+  <div class="mods">
+    <div class="mod-h"><span>위치</span><span>모듈</span><span>입력</span><span>출력</span></div>
+    <div class="mod"><span class="mod-w">폰</span><span class="mod-f">recorder.js</span><span class="mod-i">마이크 스트림</span><span class="mod-o">2.0초 청크 (hop 1.0초) + 순번</span></div>
+    <div class="mod"><span class="mod-w">폰↔서버</span><span class="mod-f">ws_client.js</span><span class="mod-i">청크 + 순번</span><span class="mod-o">섭동 δ · 재전송 관리</span></div>
+    <div class="mod"><span class="mod-w">서버</span><span class="mod-f">psychoacoustic.py</span><span class="mod-i">16 kHz 파형</span><span class="mod-o">Bark 25대역 프레임별 임계값</span></div>
+    <div class="mod"><span class="mod-w">서버</span><span class="mod-f">encoder.py</span><span class="mod-i">파형</span><span class="mod-o">화자 임베딩 + gradient 핸들</span></div>
+    <div class="mod"><span class="mod-w">서버</span><span class="mod-f">vad.py</span><span class="mod-i">파형</span><span class="mod-o">발화 구간 마스크 (페이드 포함)</span></div>
+    <div class="mod"><span class="mod-w">서버</span><span class="mod-f">perturbation.py</span><span class="mod-i">파형, 임계값, 마스크</span><span class="mod-o">섭동 δ · PGD + 정규화 + 투영</span></div>
+    <div class="mod"><span class="mod-w">서버</span><span class="mod-f">worker.py</span><span class="mod-i">청크 큐</span><span class="mod-o">청크별 δ · 적체 시 스텝 자동 감축</span></div>
+    <div class="mod"><span class="mod-w">서버</span><span class="mod-f">controls.py</span><span class="mod-i">원본, 목표 SNR</span><span class="mod-o">대조군 4종</span></div>
+    <div class="mod"><span class="mod-w">서버</span><span class="mod-f">codec.py</span><span class="mod-i">파형, 코덱</span><span class="mod-o">코덱 왕복, 지연 정렬</span></div>
+    <div class="mod"><span class="mod-w">서버</span><span class="mod-f">metrics.py</span><span class="mod-i">원본, 보호본, 복제음</span><span class="mod-o">SNR · 가청도 · SRS · DSR + 신뢰구간</span></div>
+    <div class="mod"><span class="mod-w">폰</span><span class="mod-f">assembler.js</span><span class="mod-i">청크별 δ</span><span class="mod-o">Hann overlap-add 보호 파형</span></div>
+    <div class="mod"><span class="mod-w">폰</span><span class="mod-f">ui_mode2.js</span><span class="mod-i">상태 스트림</span><span class="mod-o">파형 뷰 · 진행바 · A/B 재생 · 내보내기</span></div>
+    <div class="mod"><span class="mod-w">서버</span><span class="mod-f">test_sanity.py</span><span class="mod-i">파이프라인</span><span class="mod-o">SNR 달성 · 마스킹 불변식 · NaN 검사</span></div>
+    <div class="mod"><span class="mod-w">서버</span><span class="mod-f">gradcheck.py</span><span class="mod-i">인코더, 손실</span><span class="mod-o">수치미분 상대오차 · 상관계수</span></div>
+  </div>
+
+  <h3><span class="hn">5.2</span>화면 구성</h3>
+  <div class="tw"><table>
+    <thead><tr><th style="width:24%">요소</th><th>내용</th></tr></thead>
+    <tbody>
+      <tr><td class="k t-per">파형 뷰</td><td class="t-per">원본 파형이 실시간으로 그려지고, <strong>처리 완료 구간이 보라색으로 덧칠</strong>되며 따라온다 — 동시 처리가 눈에 보인다</td></tr>
+      <tr><td class="k">청크 진행바</td><td>청크별 상태(대기·전송·처리·완료). 큐 길이 실시간 표시</td></tr>
+      <tr><td class="k">지표 패널</td><td>누적 SNR · 추정 가청도 · 청크별 SRS</td></tr>
+      <tr><td class="k t-gap">A/B 재생</td><td class="t-gap">원본과 보호본을 즉시 번갈아 재생 — <strong>“같게 들린다”를 그 자리에서 확인</strong></td></tr>
+      <tr><td class="k">대조군 토글</td><td>백색잡음·대역제한잡음·셔플 버전도 재생 가능 (평가용)</td></tr>
+      <tr><td class="k">내보내기</td><td>보호 WAV + 메타데이터 JSON. 공유 시트로 메신저 전송 가능</td></tr>
+    </tbody>
+  </table></div>
+
+  <div class="call">
+    <span class="call-h">플랫폼이 곧 계측기다</span>
+    <p>이 화면은 시연 도구인 동시에 <strong>실험 장비</strong>다. 같은 발화에 대해 대조군 4종을 한 번에 생성하므로,
+    팀원이 30분 말하면 <strong>n=30 데이터셋이 대조군까지 갖춰진 채로</strong> 쌓인다.
+    “표본이 적다”와 “대조군이 없다”는 두 약점이 이 도구 하나로 동시에 해결된다.</p>
+  </div>
+</section>
+
+<!-- 06 -->
+<section>
+  <div class="eyebrow">06 · 평가</div>
+  <h2>대조군 없이는 아무것도 주장할 수 없다</h2>
+
+  <div class="call warn">
+    <span class="call-h">검증에서 확인된 사실</span>
+    <p>MFCC 통계 대리 인코더 기준으로, <strong>SNR 20 dB 백색잡음만 넣어도 화자 유사도가 0.138까지</strong> 떨어진다.
+    서로 다른 화자 간 기준선이 0.80이므로 잡음만으로도 “다른 사람” 판정이 난다.
+    <strong>대조군 없이 DSR을 보고하면 “그냥 잡음 아니냐”에 답할 수 없다.</strong></p>
+  </div>
+
+  <div class="tw"><table>
+    <thead><tr><th style="width:20%">대조군</th><th style="width:28%">조건</th><th>방어하는 반박</th></tr></thead>
+    <tbody>
+      <tr><td class="k t-gap">C-A 백색잡음</td><td class="num">동일 SNR · 전대역</td><td class="t-gap"><strong>“그냥 잡음 아닌가”</strong> — 가장 먼저 나올 질문</td></tr>
+      <tr><td class="k t-gap">C-B 대역제한 잡음</td><td class="num">동일 SNR · 300~3400 Hz</td><td class="t-gap"><strong>“대역 제한이 효과의 전부 아닌가”</strong></td></tr>
+      <tr><td class="k">C-C 무섭동 원본</td><td class="num">δ = 0</td><td>인코더 정상 작동 확인 · SRS ≈ 1.0</td></tr>
+      <tr><td class="k">C-D 타 화자</td><td class="num">다른 사람 음성</td><td>“다른 사람” 판정 기준선 — DSR 임계값의 근거</td></tr>
+      <tr><td class="k t-per">C-E 셔플 섭동</td><td class="num">최적화된 δ를 시간축 셔플</td><td class="t-per"><strong>“구조가 원인인가 크기가 원인인가”</strong> — 결정적 증거</td></tr>
+    </tbody>
+  </table></div>
+
+  <div class="call per">
+    <span class="call-h">C-E가 발표에서 가장 강한 카드다</span>
+    <p>섭동을 시간축으로 뒤섞으면 크기와 스펙트럼은 거의 같고 <strong>구조만 파괴</strong>된다.
+    이때 DSR이 크게 떨어지면 “적대적 최적화가 만든 구조가 효과의 원인”이 증명된다.
+    비용이 거의 0이면서 대조군 질문 전체를 막는다.</p>
+  </div>
+
+<pre><span class="c"># 모든 DSR 보고는 이 형식을 벗어나지 않는다</span>
+조건            n      DSR      95% CI        vs C-B
+────────────────────────────────────────────────────
+적대적 섭동     30    ??.?%   [??.?, ??.?]     +??.?%p
+C-B 대역제한잡음 30    ??.?%   [??.?, ??.?]     기준
+C-A 백색잡음    30    ??.?%   [??.?, ??.?]     +??.?%p
+C-E 셔플        30    ??.?%   [??.?, ??.?]     +??.?%p
+C-C 무섭동      30     0.0%   [ 0.0, 11.4]     —
+</pre>
+  <p class="small muted">
+    <strong>n · 신뢰구간 · 대조군 대비</strong> 세 가지가 항상 함께 나온다.
+    표본 6개일 때 DSR 100%의 95% CI는 [61%, 100%]지만 n=30이면 [88%, 100%]로 좁아진다.
+  </p>
+
+  <h3><span class="hn">6.1</span>전이성 — Leave-One-Out <span class="t-amb">· P1</span></h3>
+  <div class="tw"><table>
+    <thead><tr><th style="width:36%">최적화에 사용</th><th style="width:26%">평가 대상 (미학습)</th><th>의미</th></tr></thead>
+    <tbody>
+      <tr><td class="num">Resemblyzer + ECAPA</td><td class="num t-per">x-vector</td><td>처음 보는 인코더 전이율</td></tr>
+      <tr><td class="num">Resemblyzer + x-vector</td><td class="num t-per">ECAPA</td><td>〃</td></tr>
+      <tr><td class="num">ECAPA + x-vector</td><td class="num t-per">Resemblyzer</td><td>〃</td></tr>
+      <tr><td class="num">3개 앙상블 전체</td><td class="num t-gap">XTTS-v2 내부 인코더</td><td class="t-gap">실전 전이율 — 최종 검증</td></tr>
+    </tbody>
+  </table></div>
+  <p class="small">
+    낮게 나와도 결론이 된다 — “신호 도메인 섭동은 인코더 간 전이가 제한적이며,
+    이것이 앙상블 확대 또는 임베딩 레벨 접근이 필요한 이유”.
+    <strong>측정하지 않은 모델에 대해서는 아무 말도 하지 않는다.</strong>
+  </p>
+
+  <h3><span class="hn">6.2</span>단위 테스트</h3>
+  <div class="tw"><table>
+    <thead><tr><th style="width:30%">테스트</th><th style="width:32%">단언</th><th>잡는 결함</th></tr></thead>
+    <tbody>
+      <tr><td class="k t-gap">test_masking_invariant</td><td class="small"><code>abs(stft(δ)) ≤ thr×ratio</code> 전 bin</td><td class="t-gap">정규화가 제약을 깨는 문제</td></tr>
+      <tr><td class="k t-gap">test_projection_no_nan</td><td class="small">무음 포함 입력 200스텝 후 NaN 0</td><td class="t-gap">0-나눗셈</td></tr>
+      <tr><td class="k">test_snr_target</td><td class="small"><code>|측정 − 목표| &lt; 0.5 dB</code></td><td>dB 스케일 혼용</td></tr>
+      <tr><td class="k">test_band_limit</td><td class="small">대역 밖 에너지 &lt; −60 dB</td><td>대역 제한 누락</td></tr>
+      <tr><td class="k">test_vad_fade</td><td class="small">경계 1차 차분에 불연속 없음</td><td>클릭 노이즈</td></tr>
+      <tr><td class="k t-per">test_overlap_add</td><td class="small">균일 δ 입력 시 합성 진폭 보존</td><td class="t-per">청크 창 보정 오류</td></tr>
+      <tr><td class="k t-per">test_pipeline_no_backlog</td><td class="small">60초 스트림에 큐 길이 ≤ 3</td><td class="t-per">적체</td></tr>
+      <tr><td class="k">test_gradient</td><td class="small">상대오차 &lt; 1e-3 · 상관 &gt; 0.999</td><td class="t-sig">이미 구현됨 — 유지</td></tr>
+      <tr><td class="k">test_stft_roundtrip</td><td class="small">100회 왕복 상대오차 &lt; 1e-10</td><td>COLA 위반 · float32 정밀도</td></tr>
+      <tr><td class="k">test_ws_resend</td><td class="small">청크 유실 시 재전송·순번 복원</td><td>스트리밍 유실</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<!-- 07 -->
+<section style="border-bottom:none">
+  <div class="eyebrow">07 · 한계</div>
+  <h2>이 모드가 못 하는 것</h2>
+  <div class="tw"><table>
+    <thead><tr><th style="width:28%">한계</th><th>내용</th></tr></thead>
+    <tbody>
+      <tr><td class="k">이미 유출된 음성</td><td>과거에 공개한 음성은 공격자가 이미 확보했을 수 있다. 실효 범위는 <strong>앞으로 녹음할 음성</strong>에 국한된다</td></tr>
+      <tr><td class="k t-gap">온디바이스 불가</td><td class="t-gap">PGD는 gradient가 필수인데 모바일 추론 런타임이 역전파를 지원하지 않는다. <strong>서버가 반드시 필요하다</strong></td></tr>
+      <tr><td class="k">양방향 실시간 통화</td><td>지연 1.6초 하한 때문에 대화에는 쓸 수 없다. UFP 전환 시 방어가 크게 약해진다</td></tr>
+      <tr><td class="k">기존 통화 녹음</td><td>상대방이 우리 앱 밖에 있으면 막을 수 없다. 통신사 협력 없이는 원리적으로 안 닫힌다</td></tr>
+      <tr><td class="k">정화 공격</td><td>De-AntiFake · VocalBridge 하에서는 효과가 크게 감소할 것으로 예상. <strong>신호 도메인 덧셈 섭동의 구조적 한계</strong></td></tr>
+      <tr><td class="k">협대역 코덱</td><td>8 kHz 전화망에서 방어가 최대 33%p 손실. 배포 3단계(통신망 통합)의 근거</td></tr>
+      <tr><td class="k">3·5세대 복제</td><td>fine-tuning(RVC) · LLM E2E는 범위 밖</td></tr>
+      <tr><td class="k">이중 용도</td><td>화자 인코더를 속이는 기술은 <strong>성문 인증 우회</strong>에도 쓰일 수 있다. untargeted 방식이라 타인 위장은 아니지만 자발적으로 명시한다</td></tr>
+      <tr><td class="k">모드 1과의 상호작용</td><td>보호된 음성을 딥보이스 탐지기에 넣으면 “가짜” 판정 가능. 시연에서 두 모드를 교차하지 않는다</td></tr>
+    </tbody>
+  </table></div>
+
+  <div class="call">
+    <span class="call-h">정확한 표현</span>
+    <p>“보이스피싱을 막는다”가 아니라
+    <strong>“신규 유출을 차단하고, 시간이 지날수록 보호 범위가 넓어지는 구조”</strong>다.
+    어느 단계에서도 완전 차단은 없다. 이미 유출된 음성은 회수할 수 없기 때문이다.</p>
+  </div>
+</section>
+
+<footer>
+  <div class="f-rule"></div>
+  <p><b>Team Lumina</b> · 모드 2 설계도 · LUMINA-D09 · 2026.07.28 · RTX 3060 서버 기준<br>
+  관련 <b>D07</b> 최종 계획서 · <b>D08</b> 모드 1 설계도 · <b>R03</b> 구현방식 확정 · <b>D02</b> 검토 보고서</p>
+  <p style="margin-top:14px">
+    파라미터는 Resemblyzer 구조(3층 LSTM hidden 768)의 FLOP 모델과 RTX 3060 실효 8 TFLOP/s 가정으로 산출했다.
+    실측값이 다르면 청크 길이와 스텝 수를 재조정한다 — 여유율 64%이므로 상당한 오차를 흡수할 수 있다.
+  </p>
+</footer>
+
+</div>
+</body>
+</html>

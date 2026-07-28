@@ -1,0 +1,17 @@
+# 미리내 · 서버 코어 (D09 모드 2)
+#
+# 실제 구현 장비는 RTX 3060(CUDA). torch는 장비에 맞춰 설치한다.
+#   CUDA:  pip install torch --index-url https://download.pytorch.org/whl/cu121
+#   CPU:   pip install torch
+# 코드는 device 무관하게 동작하며 cuda가 없으면 자동으로 cpu로 떨어진다.
+
+numpy>=1.24,<2.0
+scipy>=1.11
+soundfile>=0.12
+torch>=2.2
+resemblyzer>=0.1.4
+pytest>=8.0
+
+# resemblyzer → webrtcvad가 pkg_resources를 import한다.
+# setuptools 81+ 에서 pkg_resources가 제거되어 ModuleNotFoundError가 난다. 반드시 핀 고정.
+setuptools<81

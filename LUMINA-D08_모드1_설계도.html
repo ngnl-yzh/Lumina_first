@@ -1,0 +1,523 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LUMINA-D08 · 모드 1 설계도 — 보이스피싱 위험 경고</title>
+<link rel="preconnect" href="https://cdn.jsdelivr.net">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable.min.css">
+<style>
+:root{--paper:#EDF1F4;--surface:#F8FAFB;--surface-2:#E3E9ED;--ink:#14202B;--ink-2:#56636E;--ink-3:#8794A0;
+--signal:#0D7A85;--gap:#A62F5B;--perturb:#5E5A94;--amber:#9A6410;
+--gap-w:#F2DCE4;--perturb-w:#E2E0EE;--amber-w:#F1E5D0;--rule:#C4CCD3;--rule-2:#DDE3E8;
+--sans:'Pretendard Variable',Pretendard,-apple-system,'Apple SD Gothic Neo','Malgun Gothic','Noto Sans KR',system-ui,sans-serif;
+--mono:ui-monospace,'SF Mono','JetBrains Mono','Menlo',monospace}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--paper);color:var(--ink);font-family:var(--sans);font-size:15px;line-height:1.75;
+-webkit-font-smoothing:antialiased;letter-spacing:-.01em;word-break:keep-all;overflow-wrap:break-word}
+.tickbar{position:fixed;top:0;left:0;right:0;height:9px;z-index:60;background:var(--signal);
+background-image:repeating-linear-gradient(90deg,rgba(255,255,255,.55) 0 1px,transparent 1px 16px)}
+.wrap{max-width:1080px;margin:0 auto;padding:0 32px}
+header{padding:88px 0 0}
+.docmeta{font-family:var(--mono);font-size:11px;letter-spacing:.1em;color:var(--ink-3);text-transform:uppercase;
+display:flex;flex-wrap:wrap;gap:8px 22px;padding-bottom:14px;border-bottom:1px solid var(--rule)}
+.docmeta b{color:var(--signal);font-weight:600}
+h1{font-size:clamp(28px,4.6vw,45px);font-weight:800;letter-spacing:-.035em;line-height:1.17;margin:34px 0 0;max-width:21ch}
+h1 em{font-style:normal;color:var(--signal)}
+.lede{margin:26px 0 0;font-size:clamp(16px,2vw,18.5px);line-height:1.68;color:var(--ink-2);max-width:62ch}
+.lede strong{color:var(--ink);font-weight:600}
+.hdr-rule{height:1px;background:var(--rule);margin:50px 0 0}
+section{padding:58px 0;border-bottom:1px solid var(--rule-2)}
+.eyebrow{font-family:var(--mono);font-size:11px;letter-spacing:.14em;color:var(--signal);text-transform:uppercase;
+margin-bottom:12px;display:flex;align-items:center;gap:10px}
+.eyebrow::before{content:'';width:22px;height:1px;background:var(--signal);flex:none}
+h2{font-size:clamp(22px,3.2vw,31px);font-weight:750;letter-spacing:-.03em;line-height:1.28;margin-bottom:14px;max-width:26ch}
+h3{font-size:17px;font-weight:700;letter-spacing:-.022em;margin:38px 0 12px;padding-top:16px;border-top:1px solid var(--rule-2)}
+h3:first-of-type{margin-top:28px}
+h3 .hn{font-family:var(--mono);font-size:12px;color:var(--ink-3);margin-right:9px;font-weight:500}
+h4{font-size:14.5px;font-weight:700;margin:22px 0 8px;letter-spacing:-.015em}
+p{margin-bottom:14px;max-width:70ch}
+strong{font-weight:650}.muted{color:var(--ink-2)}.small{font-size:13.5px;line-height:1.68}
+code{font-family:var(--mono);font-size:12.6px;background:var(--surface-2);padding:1px 5px}
+.tw{overflow-x:auto;margin:20px 0}
+table{width:100%;border-collapse:collapse;font-size:13.3px;min-width:560px}
+th{text-align:left;font-family:var(--mono);font-size:10.5px;letter-spacing:.09em;text-transform:uppercase;
+color:var(--ink-3);font-weight:500;padding:0 11px 8px;border-bottom:1.5px solid var(--ink);vertical-align:bottom}
+td{padding:10px 11px;border-bottom:1px solid var(--rule-2);vertical-align:top;line-height:1.6}
+tbody tr:hover{background:var(--surface)}
+td.num{font-family:var(--mono);font-variant-numeric:tabular-nums;white-space:nowrap}
+td.k{font-weight:640}
+.t-sig{color:var(--signal);font-weight:640}.t-gap{color:var(--gap);font-weight:640}
+.t-per{color:var(--perturb);font-weight:640}.t-amb{color:var(--amber);font-weight:640}
+.call{border-left:3px solid var(--signal);background:var(--surface);padding:17px 20px;margin:22px 0;font-size:14px;line-height:1.7}
+.call p:last-child{margin-bottom:0}
+.call.warn{border-left-color:var(--gap);background:var(--gap-w)}
+.call.note{border-left-color:var(--amber);background:var(--amber-w)}
+.call.per{border-left-color:var(--perturb);background:var(--perturb-w)}
+.call-h{font-family:var(--mono);font-size:10.5px;letter-spacing:.11em;text-transform:uppercase;color:var(--ink-2);margin-bottom:7px;display:block}
+pre{font-family:var(--mono);font-size:12.1px;line-height:1.7;background:var(--ink);color:#DCE4EA;
+padding:17px 19px;overflow-x:auto;margin:16px 0;white-space:pre}
+pre .c{color:#7E8F9C}pre .k{color:#7FD1D9}pre .v{color:#C9A2E0}pre .n{color:#E0B074}
+pre .bad{color:#E88BA6}pre .good{color:#8ED4A8}
+.stages{margin:24px 0;overflow-x:auto}.stages-in{min-width:840px}
+.st-row{display:grid;grid-template-columns:repeat(8,1fr);gap:4px}
+.st{border:1px solid var(--rule);background:var(--surface);padding:11px 10px 13px}
+.st-n{font-family:var(--mono);font-size:10px;color:var(--ink-3);display:block}
+.st-t{font-size:12.8px;font-weight:680;letter-spacing:-.02em;margin-top:4px;line-height:1.3}
+.st-w{font-family:var(--mono);font-size:10.5px;color:var(--signal);margin-top:5px}
+.st-c{font-family:var(--mono);font-size:10px;color:var(--ink-3);margin-top:2px}
+.st.hot{border-color:var(--gap);border-width:1.5px;background:var(--gap-w)}.st.hot .st-w{color:var(--gap)}
+.st-bar{display:grid;grid-template-columns:repeat(8,1fr);gap:4px;margin-top:4px}
+.sb{height:24px;display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:9.5px;color:#fff}
+.sb.rec{background:var(--ink-3)}.sb.prep{background:var(--amber)}.sb.act{background:var(--gap)}.sb.alt{background:var(--perturb)}
+.routes{display:grid;grid-template-columns:repeat(3,1fr);gap:5px;margin:22px 0}
+.rt{border:1px solid var(--rule);background:var(--surface);padding:16px 18px}
+.rt-n{font-family:var(--mono);font-size:10px;letter-spacing:.1em;color:var(--signal);display:block;margin-bottom:5px}
+.rt h4{margin:0 0 4px;font-size:15px;letter-spacing:-.025em}
+.rt-p{font-size:12px;color:var(--ink-2);margin-bottom:9px}
+.rt-seq{font-family:var(--mono);font-size:11.5px;background:var(--surface-2);padding:7px 9px;line-height:1.5}
+.rt-d{font-family:var(--mono);font-size:11px;color:var(--ink-3);margin-top:8px}
+.pipe{margin:22px 0;border:1px solid var(--rule);background:var(--surface);padding:20px 22px}
+.pipe-t{font-family:var(--mono);font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-2);
+margin-bottom:14px;padding-bottom:10px;border-bottom:1px solid var(--rule-2)}
+.step{display:grid;grid-template-columns:26px 1fr;gap:13px;padding:9px 0;border-bottom:1px solid var(--rule-2)}
+.step:last-child{border-bottom:none}
+.step-n{font-family:var(--mono);font-size:11px;color:#fff;background:var(--signal);width:22px;height:22px;
+display:flex;align-items:center;justify-content:center;margin-top:2px}
+.step.hot .step-n{background:var(--gap)}
+.step.srv .step-n{background:var(--perturb)}
+.step-b h4{margin:0 0 3px;font-size:14px}
+.step-b p{margin:0;font-size:12.8px;color:var(--ink-2);line-height:1.6;max-width:none}
+.mods{margin:22px 0}
+.mod{display:grid;grid-template-columns:64px 150px 1fr 1fr;border-top:1px solid var(--rule-2);font-size:13px}
+.mod:last-child{border-bottom:1px solid var(--rule-2)}
+.mod-w{font-family:var(--mono);font-size:10px;padding:11px 8px 11px 0;color:var(--ink-3);letter-spacing:.06em}
+.mod-f{font-family:var(--mono);font-size:12px;padding:11px 12px 11px 0;color:var(--signal);font-weight:600}
+.mod-i,.mod-o{padding:11px 12px;color:var(--ink-2);border-left:1px solid var(--rule-2);line-height:1.55}
+.mod-h{display:grid;grid-template-columns:64px 150px 1fr 1fr;font-family:var(--mono);font-size:10px;letter-spacing:.09em;
+text-transform:uppercase;color:var(--ink-3);padding-bottom:7px;border-bottom:1.5px solid var(--ink)}
+.mod-h span:nth-child(n+3){padding-left:12px}
+.tags{display:flex;flex-wrap:wrap;gap:5px;margin:10px 0}
+.tag{font-family:var(--mono);font-size:10.5px;padding:3px 8px;background:var(--surface-2);color:var(--ink-2);border:1px solid var(--rule-2)}
+footer{padding:48px 0 70px;font-size:12.5px;color:var(--ink-3);line-height:1.75}
+footer .f-rule{height:1px;background:var(--rule);margin-bottom:22px}
+footer b{color:var(--ink-2);font-weight:600}
+@media (max-width:860px){.wrap{padding:0 20px}header{padding-top:60px}section{padding:44px 0}
+.routes{grid-template-columns:1fr}.mod,.mod-h{grid-template-columns:1fr}.mod-i,.mod-o{border-left:none;padding-left:0}}
+@media print{.tickbar{display:none}body{background:#fff;font-size:10pt}section,.call,.pipe{page-break-inside:avoid}}
+</style>
+</head>
+<body>
+<div class="tickbar"></div>
+<div class="wrap">
+
+<header>
+  <div class="docmeta">
+    <span>Team Lumina</span><span>전남대학교 인공지능학부</span>
+    <span><b>모드 1 설계도</b></span><span>LUMINA-D08</span><span>모바일 + 서버</span><span>2026.07.28</span>
+  </div>
+  <h1>말하는 도중에 <em>끊어낸다</em></h1>
+  <p class="lede">
+    모드 1은 발화를 실시간으로 분석해 보이스피싱 위험을 판정하고,
+    <strong>발화 종료 후 0.7초 안에</strong> 심리적 강압을 깨는 경고 음성을 낸다.
+    탐지가 목적이 아니라 <strong>멈추게 하는 것</strong>이 목적이며, 그래서 지연이 성능의 일부다.
+  </p>
+  <div class="hdr-rule"></div>
+</header>
+
+<!-- 01 -->
+<section>
+  <div class="eyebrow">01 · 설계 원리</div>
+  <h2>시퀀스로 식별하고, 제때 개입한다</h2>
+  <p>
+    정상 통화에서 “계좌”는 흔하다. 그러나
+    <strong>검찰청 + 대포통장 + 체포영장 + 말하지 마세요 + 안전계좌</strong>가
+    한 통화에 모두 등장할 확률은 사실상 0이다. 보이스피싱은 개별 단어가 아니라 <strong>단계의 조합</strong>으로 식별된다.
+  </p>
+  <div class="tw">
+  <table>
+    <thead><tr><th style="width:22%">층위</th><th style="width:30%">내용</th><th>목적</th></tr></thead>
+    <tbody>
+      <tr><td class="k">1. 무엇을 말하는가</td><td>8단계 발화 패턴 182항</td><td>탐지</td></tr>
+      <tr><td class="k">2. 왜 그것이 통하는가</td><td>심리 조작 구조 — 주의 왜곡 · 통제 불능</td><td>탐지 우선순위 결정</td></tr>
+      <tr><td class="k t-gap">3. 어떻게 멈추게 하는가</td><td class="t-gap">경고 설계 5원칙 + <strong>실시간 개입</strong></td><td class="t-gap">실효성</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <div class="call warn">
+    <span class="call-h">이전 설계의 모순을 바로잡는다</span>
+    <p>기존 명세는 <strong>처리 시간 “3분 통화 → 60초”</strong>와 <strong>S4 조기경고율 80%</strong>를 나란히 두었다.
+    앞의 것은 통화가 끝나고 60초 뒤 결과가 나온다는 뜻이고, 뒤의 것은 통화 중 개입을 요구한다.
+    <strong>앞을 만족하면 뒤는 구조적으로 0%다.</strong>
+    본 설계는 실시간 스트리밍으로 전환하고, 지표를 <strong>“발화 종료 후 개입까지의 지연”</strong>으로 교체한다.</p>
+  </div>
+</section>
+
+<!-- 02 -->
+<section>
+  <div class="eyebrow">02 · 잡을 대상</div>
+  <h2>8단계 · 182개 매칭 항목</h2>
+
+  <div class="stages"><div class="stages-in">
+    <div class="st-row">
+      <div class="st"><span class="st-n">S1</span><span class="st-t">권위 확립</span><span class="st-w">w 0.80</span><span class="st-c">10 + 변형 13</span></div>
+      <div class="st"><span class="st-n">S2</span><span class="st-t">연루 통보</span><span class="st-w">w 0.70</span><span class="st-c">10 + 변형 12</span></div>
+      <div class="st"><span class="st-n">S3</span><span class="st-t">공포 조성</span><span class="st-w">w 0.85</span><span class="st-c">9 + 변형 15</span></div>
+      <div class="st hot"><span class="st-n">S4</span><span class="st-t">고립 유도</span><span class="st-w">w 1.00</span><span class="st-c">8 + 변형 16</span></div>
+      <div class="st"><span class="st-n">S5</span><span class="st-t">행동 지시</span><span class="st-w">w 0.90</span><span class="st-c">14 + 변형 22</span></div>
+      <div class="st"><span class="st-n">S6</span><span class="st-t">시간 압박</span><span class="st-w">w 0.60</span><span class="st-c">6 + 변형 11</span></div>
+      <div class="st"><span class="st-n">S7</span><span class="st-t">가족 사칭</span><span class="st-w">w 0.85</span><span class="st-c">8 + 변형 13</span></div>
+      <div class="st"><span class="st-n">S8</span><span class="st-t">대출 사기</span><span class="st-w">w 0.70</span><span class="st-c">7 + 변형 8</span></div>
+    </div>
+    <div class="st-bar">
+      <div class="sb rec">기록</div><div class="sb rec">기록</div><div class="sb prep">준비</div>
+      <div class="sb act">즉시 개입</div><div class="sb act">즉시 개입</div><div class="sb act">개입+연계</div>
+      <div class="sb alt">딥보이스 결합점</div><div class="sb alt">별도 유형</div>
+    </div>
+  </div></div>
+  <p class="small muted">기본 표현 <strong>72개</strong> · 변형 <strong>110개</strong> · 합계 <strong>182개 매칭 항목</strong>.</p>
+
+  <h3><span class="hn">2.1</span>왜 S4가 최고 가중치인가</h3>
+  <p>
+    주의 왜곡 상태는 외부 정보가 유입되면 깨진다. 가족이 “그거 사기야”라고 한 마디만 해도 각성이 풀린다.
+    사기범은 이를 알고 있고, 그래서 가장 강력하게 차단하는 것이 교차검증이다.
+    <strong>S4는 정상 통화에서 나타날 이유가 전혀 없으므로 오탐률이 극히 낮은 고신뢰 신호</strong>다.
+  </p>
+
+  <h3><span class="hn">2.2</span>단독 고위험 신호 · Critical</h3>
+  <div class="tw"><table>
+    <thead><tr><th style="width:56px">ID</th><th style="width:24%">표현</th><th>근거</th></tr></thead>
+    <tbody>
+      <tr><td class="num k">C1</td><td class="k">안전계좌</td><td>실존하지 않는 개념. 어떤 공공기관도 이런 계좌로 이체를 요구하지 않는다</td></tr>
+      <tr><td class="num k">C2</td><td class="k">가족에게도 말하지</td><td>정상 기관은 가족에게 알리지 말라고 요구할 이유가 없다</td></tr>
+      <tr><td class="num k">C3</td><td class="k">은행 직원에게 말하지</td><td>창구 직원의 이상거래 감지를 회피하려는 의도가 명백</td></tr>
+      <tr><td class="num k">C4</td><td class="k">수사 기밀이니</td><td>실제 수사기관은 전화로 기밀 유지를 요구하며 금전 이체를 지시하지 않는다</td></tr>
+      <tr><td class="num k">C5</td><td class="k">원격제어</td><td>원격제어 앱 설치 유도는 계좌 탈취의 직접 수단</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3><span class="hn">2.3</span>조합 고위험 신호 · Critical Pair</h3>
+  <p>금융감독원의 “정부기관 판별 3원칙”은 단일 표현이 아니라 <strong>조합 규칙</strong>이다. 세 유형과 1:1로 대응한다.</p>
+  <div class="tw"><table>
+    <thead><tr><th style="width:56px">ID</th><th style="width:14%">조합</th><th style="width:34%">공식 판별 원칙</th><th>대응 유형</th></tr></thead>
+    <tbody>
+      <tr><td class="num k">P1</td><td class="num t-sig">S1 + S5</td><td>정부기관이 이체를 지시하는 경우</td><td>정부기관 사칭형 · 31.1%</td></tr>
+      <tr><td class="num k">P2</td><td class="num t-sig">S8 + S5</td><td>대출 처리 비용을 먼저 보내라고 하는 경우</td><td>대출빙자형 · 35.2%</td></tr>
+      <tr><td class="num k">P3</td><td class="num t-sig">S7 + S5</td><td>가족·지인이 전화·메신저로만 금전을 요구하는 경우</td><td>가족·지인 사칭형 · 33.7% <strong>· 딥보이스 주 표적</strong></td></tr>
+    </tbody>
+  </table></div>
+
+  <h3><span class="hn">2.4</span>정상 문맥 지시어 · 오탐 방지</h3>
+  <p class="small">
+    사기범의 지시와 정상 안내는 <strong>정확히 반대 방향</strong>을 향한다.
+    사기범은 “가족에게 말하지 마라, 은행에 가지 마라, 지금 당장”을, 정상 기관은 “가족과 상의하라, 영업점을 방문하라, 천천히 확인하라”를 말한다.
+  </p>
+  <div class="tags">
+    <span class="tag">보이스피싱 조심</span><span class="tag">사기 전화</span><span class="tag">절대 알려주지 마</span>
+    <span class="tag">112에 신고</span><span class="tag">1332</span><span class="tag">본인 확인 절차</span>
+    <span class="tag">영업점 방문</span><span class="tag">가족과 상의</span><span class="tag">천천히 생각</span>
+  </div>
+</section>
+
+<!-- 03 -->
+<section>
+  <div class="eyebrow">03 · 실시간 구조</div>
+  <h2>발화 단위로 자르고, 통화 전체를 누적한다</h2>
+
+  <div class="call warn">
+    <span class="call-h">고정 청크로 자르면 키워드가 쪼개진다</span>
+    <p>“가족에게도 말하지 마세요”(약 2.2초)를 2초에서 자르면
+    <code>가족에게도 말하지 마</code> + <code>세요</code>가 된다.
+    C2 고위험 신호인 <strong>“말하지 마세요”가 경계에 걸려 양쪽 어디서도 안 잡힌다.</strong>
+    모드 1은 <strong>VAD 발화 단위</strong>로 잘라야 한다 — 침묵 0.5초를 문장 끝으로 본다.</p>
+  </div>
+
+  <div class="call per">
+    <span class="call-h">모드 2와의 결정적 차이 — 상태 유지</span>
+    <p>모드 2는 청크마다 독립이다(stateless). 이전 청크가 뭐였든 상관없이 섭동을 계산한다.<br>
+    모드 1은 다르다. <strong>S1이 0:30에, S4가 2:00에 나온다.</strong> 통화 전체를 누적해야 단계 커버리지가 성립한다.
+    최신 발화만 채점하면 커버리지가 영원히 1/N에 머물러 점수가 오르지 않는다.
+    <strong>모드 1은 stateful이다.</strong></p>
+  </div>
+
+  <div class="pipe">
+    <div class="pipe-t">실시간 파이프라인 · 폰(파랑) + 서버(보라)</div>
+    <div class="step"><span class="step-n">1</span><div class="step-b"><h4>마이크 입력 · 링버퍼</h4>
+      <p>MediaRecorder API. 16 kHz 모노로 리샘플.</p></div></div>
+    <div class="step"><span class="step-n">2</span><div class="step-b"><h4>VAD 발화 분할</h4>
+      <p>에너지 기반. <strong>침묵 0.5초</strong>를 문장 경계로 판정해 발화 단위 청크를 커밋.</p></div></div>
+    <div class="step srv"><span class="step-n">3</span><div class="step-b"><h4>WebSocket 업로드 → 서버 STT</h4>
+      <p>faster-whisper base. 2초 발화 기준 처리 0.25초. 텍스트 + 타임스탬프 반환.</p></div></div>
+    <div class="step srv"><span class="step-n">4</span><div class="step-b"><h4>딥보이스 탐지 <span class="t-amb">· P1</span></h4>
+      <p>같은 청크를 사전학습 탐지모델에 통과. 결과는 S7 경로 가중치로 반영.</p></div></div>
+    <div class="step"><span class="step-n">5</span><div class="step-b"><h4>누적 전사 버퍼에 append</h4>
+      <p>통화 시작부터의 전체 텍스트를 유지. 이 버퍼 전체로 채점한다.</p></div></div>
+    <div class="step hot"><span class="step-n">6</span><div class="step-b"><h4>라우팅 + 스코어링</h4>
+      <p>유형 경로 판정 → 단계 가중 + 커버리지 − 정상문맥 → critical·pair 하한. <strong>S4 도달 시 즉시 개입 플래그.</strong></p></div></div>
+    <div class="step hot"><span class="step-n">7</span><div class="step-b"><h4>경고 음성 재생</h4>
+      <p>사전 생성 TTS 뱅크에서 조립. 지연 0에 가깝다.</p></div></div>
+  </div>
+
+  <h3><span class="hn">3.1</span>지연 예산</h3>
+  <div class="tw"><table>
+    <thead><tr><th style="width:26%">S4 대표 발화</th><th class="num" style="width:80px">발화</th><th class="num" style="width:80px">VAD</th><th class="num" style="width:90px">STT+망</th><th class="num" style="width:80px">스코어</th><th class="num">발화 후 지연</th></tr></thead>
+    <tbody>
+      <tr><td class="k">가족에게도 말하지 마세요</td><td class="num">2.2s</td><td class="num">0.5s</td><td class="num">0.30s</td><td class="num">0.01s</td><td class="num t-sig">0.81s</td></tr>
+      <tr><td class="k">수사 기밀입니다</td><td class="num">1.6s</td><td class="num">0.5s</td><td class="num">0.28s</td><td class="num">0.01s</td><td class="num t-sig">0.79s</td></tr>
+      <tr><td class="k">안전계좌로 이체하세요</td><td class="num">2.4s</td><td class="num">0.5s</td><td class="num">0.31s</td><td class="num">0.01s</td><td class="num t-sig">0.82s</td></tr>
+    </tbody>
+  </table></div>
+  <p class="small">
+    사기범이 다음 문장으로 넘어가는 데 2~4초가 걸린다.
+    <strong>발화 종료 후 0.8초면 같은 문장의 여운 안에서 끊어낼 수 있다.</strong>
+    경고의 첫 문장이 “방금 ○○라는 말이 나왔습니다”이므로, 이 즉시성이 설계의 핵심이다.
+  </p>
+</section>
+
+<!-- 04 -->
+<section>
+  <div class="eyebrow">04 · 스코어링</div>
+  <h2>유형별 경로 정규화</h2>
+
+  <div class="routes">
+    <div class="rt"><span class="rt-n">ROUTE A</span><h4>정부기관 사칭</h4>
+      <p class="rt-p">31.1% · 광주·전남 급증</p>
+      <div class="rt-seq">S1 → S2 → S3 → S4 → S5 → S6</div>
+      <div class="rt-d">분모 6.35 · 조합 P1</div></div>
+    <div class="rt"><span class="rt-n">ROUTE B</span><h4>가족·지인 사칭</h4>
+      <p class="rt-p">33.7% · <strong style="color:var(--perturb)">딥보이스 주 표적</strong></p>
+      <div class="rt-seq">S7 → S3 → S4 → S5 → S6</div>
+      <div class="rt-d">분모 5.70 · 조합 P3</div></div>
+    <div class="rt"><span class="rt-n">ROUTE C</span><h4>대출빙자</h4>
+      <p class="rt-p">35.2% · 딥보이스 결합도 낮음</p>
+      <div class="rt-seq">S8 → S5 → S6</div>
+      <div class="rt-d">분모 3.70 · 조합 P2</div></div>
+  </div>
+
+<pre><span class="c"># 누적 전사 버퍼 전체로 채점한다 — 최신 발화만 보면 안 된다</span>
+<span class="k">def</span> score(buffer_text, db, route):
+    act = ROUTE[route]
+
+    <span class="c"># (1) 단계별 매칭 — max(합산 아님)</span>
+    hit = {s: max((kw.score <span class="k">for</span> kw <span class="k">in</span> db[s] <span class="k">if</span> match(buffer_text, kw)),
+                  <span class="good">default=<span class="v">0.0</span></span>) <span class="k">for</span> s <span class="k">in</span> act}       <span class="c">← FIX 빈 시퀀스</span>
+
+    stage_score = sum(hit[s] <span class="n">*</span> W[s] <span class="k">for</span> s <span class="k">in</span> act)
+
+    <span class="c"># (2) 커버리지 — 0보다 큰 단계만 계수</span>
+    cov   = sum(<span class="v">1</span> <span class="k">for</span> s <span class="k">in</span> act <span class="good"><span class="k">if</span> hit[s] &gt; <span class="v">0</span></span>) / len(act)  <span class="c">← FIX 상시최대</span>
+    bonus = (cov <span class="n">**</span> <span class="v">2</span>) <span class="n">*</span> <span class="v">1.5</span>
+
+    penalty = count_benign(buffer_text, db) <span class="n">*</span> <span class="v">0.15</span>
+
+    <span class="c"># (3) 경로별 이론 최대로 정규화</span>
+    s = clip((stage_score <span class="n">+</span> bonus) <span class="good">/ ROUTE_MAX[route]</span> <span class="n">-</span> penalty, <span class="v">0</span>, <span class="v">1</span>)  <span class="c">← FIX 포화</span>
+
+    <span class="c"># (4) 단독·조합 고위험 하한</span>
+    <span class="k">if</span> any_critical(buffer_text, db) <span class="k">or</span> any_pair(hit):
+        s = max(s, <span class="v">0.75</span>)
+
+    <span class="c"># (5) 딥보이스 탐지 결과를 S7 경로 가중치로 반영  (P1)</span>
+    <span class="k">if</span> route == <span class="v">'B'</span> <span class="k">and</span> deepvoice_score &gt; THR:
+        s = min(<span class="v">1.0</span>, s <span class="n">+</span> <span class="v">0.10</span>)
+
+    <span class="k">return</span> s, hit, matched_evidence
+</pre>
+
+  <h3><span class="hn">4.1</span>시나리오 검증</h3>
+  <div class="tw"><table>
+    <thead><tr><th style="width:28%">시나리오</th><th class="num" style="width:56px">경로</th><th class="num" style="width:80px">기존</th><th class="num" style="width:80px">수정본</th><th>판정</th></tr></thead>
+    <tbody>
+      <tr><td class="k">정상 통화 · benign 3</td><td class="num">A</td><td class="num">0.000</td><td class="num">0.000</td><td class="muted">낮음</td></tr>
+      <tr><td class="k">기관사칭 S1~S3</td><td class="num">A</td><td class="num">0.304</td><td class="num">0.404</td><td class="muted">낮음 — 아직 개입 안 함</td></tr>
+      <tr><td class="k">기관사칭 S1~S4 ★</td><td class="num">A</td><td class="num">0.750</td><td class="num t-sig">0.750</td><td class="t-sig">높음 — 개입</td></tr>
+      <tr><td class="k">기관사칭 S1~S6</td><td class="num">A</td><td class="num">0.750</td><td class="num t-sig">0.956</td><td class="t-sig">포화 해소</td></tr>
+      <tr><td class="k t-per">가족사칭 S7+S5 ★</td><td class="num">B</td><td class="num t-gap">0.200</td><td class="num t-sig">0.750</td><td class="t-gap">기존은 놓쳤다 — P3로 해결</td></tr>
+      <tr><td class="k">대출빙자 S8+S5</td><td class="num">C</td><td class="num t-gap">0.506</td><td class="num t-sig">0.750</td><td class="t-gap">P2로 해결</td></tr>
+    </tbody>
+  </table></div>
+
+  <div class="call warn">
+    <span class="call-h">이 수정이 없으면 딥보이스 시나리오를 놓친다</span>
+    <p>가족사칭 “S7 + S5”는 <strong>이 프로젝트가 방어하려는 바로 그 시나리오</strong>인데,
+    8단계 전체를 분모로 쓰는 기존 방식에서는 0.200 “낮음” 판정이었다.
+    적은 단계만 쓰는 가족사칭형이 구조적으로 불리했기 때문이다.</p>
+  </div>
+</section>
+
+<!-- 05 -->
+<section>
+  <div class="eyebrow">05 · 개입</div>
+  <h2>탐지가 아니라 멈추게 하는 것</h2>
+
+  <div class="tw"><table>
+    <thead><tr><th style="width:22%">설계 원칙</th><th style="width:24%">근거 기제</th><th>구현</th></tr></thead>
+    <tbody>
+      <tr><td class="k">1. 각성을 깨는 구체성</td><td class="muted">주의 집중의 왜곡</td><td>“의심됩니다” 대신 <strong>방금 들린 말을 그대로 인용</strong></td></tr>
+      <tr><td class="k">2. 통제감의 회복</td><td class="muted">통제 불능 감각</td><td>“지금 전화를 끊으셔도 아무 일도 생기지 않습니다”</td></tr>
+      <tr><td class="k">3. 교차검증의 복원</td><td class="muted">S4 고립 유도</td><td>“끊고 나서 자녀분께 직접 전화해 확인하세요”</td></tr>
+      <tr><td class="k">4. 권위의 대항 배치</td><td class="muted">전문기관에 대한 인지 종속</td><td>“안전계좌는 존재하지 않습니다” · 112 · 1332</td></tr>
+      <tr><td class="k">5. 행동 단순화</td><td class="muted">인지 부하</td><td>단일 행동만 제시</td></tr>
+    </tbody>
+  </table></div>
+
+<pre>지금 통화에서 <span class="n">"안전계좌로 이체"</span> 라는 말이 나왔습니다.   <span class="c">← 원칙1 구체성</span>
+안전계좌는 존재하지 않습니다.                          <span class="c">← 원칙4 대항 권위</span>
+검찰·경찰·금융감독원은 절대로 돈을 옮기라고 하지 않습니다.
+
+지금 전화를 끊으셔도 아무 일도 생기지 않습니다.          <span class="c">← 원칙2 통제감 회복</span>
+ → 끊고 나서 자녀분께 직접 전화해 확인하세요.            <span class="c">← 원칙3 교차검증 복원</span>
+ → 확인이 어려우면 112로 전화하세요.                    <span class="c">← 원칙5 행동 단순화</span>
+</pre>
+
+  <div class="call note">
+    <span class="call-h">경고 음성은 사전 생성 뱅크로 조립한다</span>
+    <p>실시간 TTS는 지연과 실패 위험이 있다. <strong>182개 키워드 음성을 오프라인에서 미리 생성</strong>해 두고,
+    고정 문장 프레임과 조립한다. 런타임 지연이 사실상 0이며 발음 품질도 미리 검수할 수 있다.
+    시연 안정성에서 결정적 차이가 난다.</p>
+  </div>
+
+  <h3><span class="hn">5.1</span>개입 시점</h3>
+  <div class="tw"><table>
+    <thead><tr><th style="width:14%">단계</th><th style="width:20%">대응</th><th>근거</th></tr></thead>
+    <tbody>
+      <tr><td class="num k">S1~S2</td><td>기록만</td><td>오탐 위험. 정상 통화일 수 있다</td></tr>
+      <tr><td class="num k">S3</td><td class="t-amb">준비</td><td>위험도 상승 신호. 경고 문안 사전 조립</td></tr>
+      <tr><td class="num k t-gap">S4</td><td class="t-gap">즉시 개입</td><td><strong>아직 자금 이동 전이면서 오탐률 최저</strong> — 탐지 신뢰도와 개입 여유가 동시에 확보되는 유일 구간</td></tr>
+      <tr><td class="num k">S5</td><td class="t-gap">즉시 개입</td><td>마지막 기회</td></tr>
+      <tr><td class="num k">S6 이후</td><td>개입 + 금융기관 연계</td><td>자금 이동 임박</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3><span class="hn">5.2</span>고령층 전달 설계</h3>
+  <div class="tw"><table>
+    <thead><tr><th style="width:20%">항목</th><th style="width:28%">설계</th><th>근거</th></tr></thead>
+    <tbody>
+      <tr><td class="k">전달 매체</td><td class="t-gap">음성 우선, 화면은 보조</td><td>통화 중 화면 팝업은 귀에 대고 있으면 보이지 않는다</td></tr>
+      <tr><td class="k">발화 속도</td><td>평상 대비 느리게</td><td>인지 처리 시간 확보</td></tr>
+      <tr><td class="k">문장 길이</td><td>한 문장 15자 내외</td><td>각성 상태에서의 이해도</td></tr>
+      <tr><td class="k">반복</td><td>핵심 문장 2회</td><td>1회는 놓칠 수 있음</td></tr>
+      <tr><td class="k">용어</td><td>사기범이 쓴 말 그대로</td><td>“안전계좌”를 “가짜 계좌”로 번역하면 연결이 끊긴다</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<!-- 06 -->
+<section>
+  <div class="eyebrow">06 · 모듈</div>
+  <h2>명세</h2>
+  <div class="mods">
+    <div class="mod-h"><span>위치</span><span>모듈</span><span>입력</span><span>출력</span></div>
+    <div class="mod"><span class="mod-w">폰</span><span class="mod-f">recorder.js</span><span class="mod-i">마이크 스트림</span><span class="mod-o">16 kHz 모노 링버퍼</span></div>
+    <div class="mod"><span class="mod-w">폰</span><span class="mod-f">vad.js</span><span class="mod-i">링버퍼</span><span class="mod-o">발화 단위 청크 (침묵 0.5s 경계)</span></div>
+    <div class="mod"><span class="mod-w">폰↔서버</span><span class="mod-f">ws_client.js</span><span class="mod-i">청크 + 순번</span><span class="mod-o">전사 텍스트 · 재전송 관리</span></div>
+    <div class="mod"><span class="mod-w">서버</span><span class="mod-f">stt.py</span><span class="mod-i">발화 청크</span><span class="mod-o">한국어 텍스트 + 타임스탬프</span></div>
+    <div class="mod"><span class="mod-w">서버</span><span class="mod-f">deepvoice.py <span class="t-amb">P1</span></span><span class="mod-i">발화 청크</span><span class="mod-o">합성 음성 확률</span></div>
+    <div class="mod"><span class="mod-w">폰</span><span class="mod-f">state.js</span><span class="mod-i">전사 조각</span><span class="mod-o">누적 전사 버퍼 · 단계 히트 상태</span></div>
+    <div class="mod"><span class="mod-w">폰</span><span class="mod-f">pattern_db.json</span><span class="mod-i">—</span><span class="mod-o">8단계 182항 + critical + pair + benign</span></div>
+    <div class="mod"><span class="mod-w">폰</span><span class="mod-f">matcher.js</span><span class="mod-i">텍스트, 키워드</span><span class="mod-o">매칭 여부 (NFC 정규화 + 자모 근사)</span></div>
+    <div class="mod"><span class="mod-w">폰</span><span class="mod-f">router.js</span><span class="mod-i">누적 버퍼</span><span class="mod-o">유형 경로 A / B / C</span></div>
+    <div class="mod"><span class="mod-w">폰</span><span class="mod-f">scorer.js</span><span class="mod-i">버퍼, DB, 경로</span><span class="mod-o">위험도 + 근거 + 단계 히트</span></div>
+    <div class="mod"><span class="mod-w">폰</span><span class="mod-f">warning.js</span><span class="mod-i">스코어 결과</span><span class="mod-o">TTS 뱅크 조립 → 경고 음성 재생</span></div>
+    <div class="mod"><span class="mod-w">폰</span><span class="mod-f">ui_mode1.js</span><span class="mod-i">상태 스트림</span><span class="mod-o">실시간 전사 · 단계 게이지 · 경고 표시</span></div>
+  </div>
+  <p class="small muted">
+    <code>warning.js</code>와 <code>router.js</code>가 일반적인 탐지 설계에는 없는 모듈이다.
+    전자는 “탐지 결과를 그대로 알리면 피해자가 멈추지 않는다”는 분석에서, 후자는 “유형마다 전개가 다르다”는 분석에서 나왔다.
+    <strong>두 모듈이 이 모드의 독창성이 자리한 곳이다.</strong>
+  </p>
+
+  <h3><span class="hn">6.1</span>화면 구성</h3>
+  <div class="tw"><table>
+    <thead><tr><th style="width:24%">요소</th><th>내용</th></tr></thead>
+    <tbody>
+      <tr><td class="k">실시간 전사</td><td>발화가 끝날 때마다 텍스트가 아래로 쌓인다. <strong>매칭된 키워드는 색으로 강조</strong></td></tr>
+      <tr><td class="k t-gap">단계 게이지</td><td>S1~S8 여덟 칸. 히트한 단계가 채워지고 <strong>S4에서 붉게 전환</strong>되며 개입</td></tr>
+      <tr><td class="k">위험도 바</td><td>누적 점수를 0~1로 표시. 0.45 / 0.75 임계선 표시</td></tr>
+      <tr><td class="k">근거 패널</td><td>“왜 이 점수인가” — 매칭된 표현과 발동한 규칙(C·P) 목록</td></tr>
+      <tr><td class="k t-gap">경고 오버레이</td><td>고대비 전면 표시 + 음성 재생. <strong>글자 크게, 단일 행동</strong></td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<!-- 07 -->
+<section>
+  <div class="eyebrow">07 · 평가</div>
+  <h2>지표와 테스트</h2>
+  <div class="tw"><table>
+    <thead><tr><th style="width:26%">지표</th><th class="num" style="width:110px">목표</th><th>측정 · 주의</th></tr></thead>
+    <tbody>
+      <tr><td class="k">재현율 (사기 탐지)</td><td class="num">≥ 90%</td><td>사기 시나리오 20건. <strong>n=20에서 90%의 95% CI는 [70%, 97%]</strong> — 반드시 병기</td></tr>
+      <tr><td class="k">오탐률</td><td class="num">≤ 10%</td><td>정상 통화 20건</td></tr>
+      <tr><td class="k t-gap">S4 조기 경고율</td><td class="num t-gap">≥ 80%</td><td><strong>실질적으로 가장 중요</strong> — 자금 이동 전 개입 비율</td></tr>
+      <tr><td class="k t-sig">개입 지연 <span class="t-sig">· 신규</span></td><td class="num t-sig">≤ 1.5초</td><td class="t-sig"><strong>기존 “3분 통화 → 60초”를 대체한다.</strong> 발화 종료부터 경고 음성 시작까지</td></tr>
+      <tr><td class="k t-per">유형별 재현율</td><td class="num">A / B / C 각각</td><td>가족사칭형(B)이 낮으면 라우팅 설계 실패</td></tr>
+    </tbody>
+  </table></div>
+
+  <div class="tw"><table>
+    <thead><tr><th style="width:30%">단위 테스트</th><th style="width:30%">입력 · 기대</th><th>잡는 결함</th></tr></thead>
+    <tbody>
+      <tr><td class="k t-gap">test_no_match_no_crash</td><td class="small">매칭 0건 → 점수 0.0</td><td class="t-gap">빈 시퀀스 오류</td></tr>
+      <tr><td class="k t-gap">test_coverage_not_always_one</td><td class="small">1단계만 매칭 → cov = 1/len(act)</td><td class="t-gap">커버리지 상시 최대</td></tr>
+      <tr><td class="k t-per">test_pair_family</td><td class="small">S7+S5 → ≥ 0.75</td><td class="t-per">딥보이스 시나리오 누락 회귀 방지</td></tr>
+      <tr><td class="k">test_critical_floor</td><td class="small">“안전계좌” 단독 → ≥ 0.75</td><td>C1~C5 미발동</td></tr>
+      <tr><td class="k">test_benign_suppress</td><td class="small">예방 교육 문맥 → &lt; 0.45</td><td>오탐</td></tr>
+      <tr><td class="k t-amb">test_stt_variants</td><td class="small">“안전 계좌”·“안전개좌” → 동일 판정</td><td class="t-amb">STT 오차 취약성</td></tr>
+      <tr><td class="k t-sig">test_buffer_accumulate</td><td class="small">발화 3개 순차 투입 → 커버리지 3/N</td><td class="t-sig">상태 유지 실패</td></tr>
+      <tr><td class="k">test_route_fallback</td><td class="small">유형 판정 실패 → 전 단계 활성</td><td>라우팅 실패 시 무판정</td></tr>
+      <tr><td class="k">test_ws_reconnect</td><td class="small">연결 끊김 → 청크 재전송</td><td>스트리밍 유실</td></tr>
+    </tbody>
+  </table></div>
+
+  <div class="call warn">
+    <span class="call-h">STT 오차 — 정확 일치는 78%를 놓친다</span>
+    <p>키워드 10개 × 흔한 변형 3종 측정에서 정확 일치는 <strong>21.9%</strong>만 잡았다.
+    C1 “안전계좌”가 “안전 계좌”로 전사되면 최고위험 신호가 발동하지 않는다.
+    공백 정규화 + 자모 근사매칭으로 <strong>93.8%</strong>까지 오른다.
+    다만 근사매칭은 오탐을 늘리므로, <strong>benign 지시어에는 정확 일치를 유지</strong>하는 비대칭 설계를 쓴다.</p>
+  </div>
+
+  <div class="call warn">
+    <span class="call-h">평가의 순환 문제 — 절차로만 막힌다</span>
+    <p>같은 사람이 키워드 DB와 테스트 시나리오를 만들면 탐지율이 인위적으로 높아진다.
+    <strong>시나리오 작성자와 DB 작성자를 분리</strong>하고, 금감원 공개 재연 자료를 최대한 쓰고,
+    <strong>보고서에 작성자 분리 사실을 명시</strong>한다.</p>
+  </div>
+</section>
+
+<!-- 08 -->
+<section style="border-bottom:none">
+  <div class="eyebrow">08 · 한계</div>
+  <h2>이 모드가 못 하는 것</h2>
+  <div class="tw"><table>
+    <thead><tr><th style="width:26%">한계</th><th style="width:34%">내용</th><th>완화</th></tr></thead>
+    <tbody>
+      <tr><td class="k t-gap">개인정보 — 서버 처리</td><td class="t-gap">발화가 서버로 전송된다. “통화 내용이 단말을 떠나지 않는다”는 주장이 <strong>본 MVP에는 성립하지 않는다</strong></td><td class="t-gap">whisper.cpp 온디바이스 전환을 로드맵으로 명시. 상대방 동의 문제도 한계로 기술</td></tr>
+      <tr><td class="k">룰베이스 우회</td><td>사기범이 표현을 바꾸면 회피 가능</td><td>의미 기반 탐지 결합 — 2단계 과제</td></tr>
+      <tr><td class="k">현장 검증 부족</td><td>문헌 기반 구성, 실제 녹취 미검증</td><td>금감원 ‘그놈 목소리’ 공개 음성 청취 분석</td></tr>
+      <tr><td class="k">한국어 STT 오차</td><td>고령층 발화 + 통화 음질 + 방언</td><td>근사매칭 도입. 전남 방언은 AI Hub 데이터 검토</td></tr>
+      <tr><td class="k t-amb">딥보이스 탐지 일반화</td><td class="t-amb">ASVspoof 모델은 학습에 없던 합성 방식에 약하다. XTTS-v2를 못 잡을 수 있다</td><td class="t-amb">P1로 두고, 실패 시 제외하고 한계로 기술</td></tr>
+      <tr><td class="k">모드 2와의 상호작용</td><td>모드 2로 보호한 음성을 딥보이스 탐지기에 넣으면 “가짜” 판정 가능</td><td>시연에서 두 모드를 교차하지 않는다. 한계로 명시</td></tr>
+    </tbody>
+  </table></div>
+
+  <div class="call">
+    <span class="call-h">모드 1의 위치</span>
+    <p>통신 3사가 이미 점유한 영역이다. 우리가 만드는 이유는 경쟁이 아니라
+    ① 모드 2가 뚫렸을 때 2차 방어선이 실제로 작동하는지 자체 검증하고,
+    ② 기관 사칭형처럼 모드 2가 원리적으로 못 막는 유형을 커버하며,
+    ③ <strong>탐지가 아니라 개입을 다룬다</strong>는 점에서 차별화하기 위해서다.</p>
+  </div>
+</section>
+
+<footer>
+  <div class="f-rule"></div>
+  <p><b>Team Lumina</b> · 모드 1 설계도 · LUMINA-D08 · 2026.07.28<br>
+  관련 <b>D07</b> 최종 계획서 · <b>D09</b> 모드 2 설계도 · <b>R04</b> 발화패턴·개입설계 · <b>D02</b> 검토 보고서</p>
+</footer>
+
+</div>
+</body>
+</html>
