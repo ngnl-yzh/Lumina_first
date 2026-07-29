@@ -40,11 +40,15 @@ hiddenimports += collect_submodules("ctranslate2")
 excludes = [
     "matplotlib", "tkinter", "PyQt5", "PySide2", "PIL.ImageQt",
     "IPython", "jupyter", "notebook", "pytest", "pyinstaller",
-    "torch.distributions", "torch.testing",
     # 딥보이스 탐지용. 재현율 18.8%라 기본값이 꺼짐이고,
     # transformers를 넣으면 1 GB 이상 늘어난다. 필요하면 소스로 실행할 것.
     "transformers", "tokenizers",
 ]
+
+# torch 하위 모듈은 빼면 안 된다.
+# torch/__init__.py가 torch.testing 등을 내부에서 import하므로
+# 제외하면 `No module named 'torch.testing'`으로 torch 자체가 안 올라온다.
+# 실제로 이 함정에 한 번 빠졌다. 크기를 줄이겠다고 건드릴 곳이 아니다.
 
 a = Analysis(
     ["launcher.py"],
