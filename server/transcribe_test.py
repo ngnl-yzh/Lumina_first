@@ -50,7 +50,7 @@ def main() -> int:
     p.add_argument("--expect", default=None,
                    help="정답 문장. 주면 문자 오류율(CER)을 계산한다")
     p.add_argument("--no-prompt-compare", action="store_true",
-                   help="initial_prompt 유무 비교를 생략한다")
+                   help="initial_prompt 유무 비교를 생략한다 (기본은 비교함)")
     args = p.parse_args()
 
     from protect import load_wav

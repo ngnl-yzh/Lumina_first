@@ -49,19 +49,47 @@ Whisper small(460 MB)과 딥보이스 탐지기(380 MB)는 EXE에 넣지 않는�
 
 ## 빌드하면서 걸린 것
 
-**`torch` 하위 모듈을 제외하면 안 된다.**
-크기를 줄이려고 `excludes`에 `torch.testing`, `torch.distributions`를 넣었더니
-`No module named 'torch.testing'`으로 torch 자체가 안 올라왔다.
-`torch/__init__.py`가 내부에서 그것들을 import하기 때문이다.
+### excludes를 추측으로 짜지 말 것
+
+크기를 줄이겠다고 짐작으로 제외했다가 **두 번 깨졌다.** 빌드가 20분씩 걸리므로 비싼 실수다.
+
+| 시도 | 결과 |
+|---|---|
+| `torch.testing`, `torch.distributions` 제외 | `No module named 'torch.testing'` — **torch 자체가 안 올라온다.** `torch/__init__.py`가 내부에서 import한다 |
+| `tokenizers`, `transformers` 제외 | `No module named 'tokenizers'` — `faster_whisper.transcribe`가 둘 다 모듈 수준에서 import한다 |
+
+두 번째가 특히 함정이었다. `transformers`는 딥보이스 탐지 전용이라고 생각했는데,
+faster-whisper가 배치 추론 기능 때문에 직접 끌어온다.
+
+**확인 방법** — launcher와 같은 경로를 import해보고 실제로 뭐가 올라오는지 센다.
+
+```python
+import sys
+before = set(sys.modules)
+# launcher가 하는 import를 그대로 따라한다 (STT는 모델까지 올려야 한다)
+...
+print(sorted({m.split(".")[0] for m in set(sys.modules) - before}))
+```
+
+135개가 나왔고, 그중 실제로 안 쓰이는 것만 `excludes`에 남겼다.
+
+부수 효과로 `transformers`가 포함되므로 **EXE에서도 `--deepvoice`가 동작한다.**
+
+### 그 밖에
 
 **`typing` 백포트 패키지를 지워야 한다.**
 PyInstaller가 거부한다. `pip uninstall typing`.
-파이썬 3.5부터 표준 라이브러리에 들어간 것의 옛 백포트라 지워도 아무 문제 없다.
+파이썬 3.5부터 표준 라이브러리에 들어간 것의 옛 백포트라 지워도 문제없다.
+
+**빌드 전에 이전 프로세스를 죽이고 `dist`/`build`를 지운다.**
+실행 중이던 EXE나 그 폴더에 들어가 있는 셸이 잠금을 걸면
+`PermissionError: [WinError 32]`로 빌드가 통째로 실패한다.
 
 **UPX 압축은 쓰지 않는다.** torch DLL이 깨지는 사례가 있다.
 
 **콘솔 창을 남긴다.** 모델 다운로드 진행과 오류 메시지를 봐야 한다.
 `--windowed`로 숨기면 실패했을 때 원인을 알 방법이 없다.
+실제로 위 두 번의 실패도 콘솔 덕에 바로 원인을 알았다.
 
 ## 실행
 
@@ -81,9 +109,11 @@ EXE는 두 포트를 쓴다.
 
 | 기능 | 왜 |
 |---|---|
-| 딥보이스 탐지 | `transformers`를 넣으면 1 GB 이상 늘어난다. 재현율 18.8%라 기본값이 꺼짐이기도 하다 |
 | XTTS 복제 검증 | 별도 venv가 필요하고 모델이 1.8 GB다. 연구용이지 시연용이 아니다 |
-| 실험 도구 | `sweep_params.py` · `benchmark_deepvoice.py` 등은 소스로 실행한다 |
+| 실험 도구 | `sweep_params.py` · `benchmark_deepvoice.py` · `check_env.py` 등은 소스로 실행한다 |
+
+딥보이스 탐지는 `transformers`가 어차피 포함되므로 **EXE에서도 `--deepvoice`로 켤 수 있다.**
+다만 자체 측정 재현율이 18.8%라 기본값은 꺼짐이고, 켜도 위험도 점수는 바꾸지 않는다.
 
 이 기능들이 필요하면 저장소를 받아 `server/README.md`대로 환경을 만든다.
 

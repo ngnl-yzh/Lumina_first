@@ -50,13 +50,26 @@ class Transcript:
 def build_initial_prompt(db=None, max_chars: int = PROMPT_MAX_CHARS) -> str:
     """패턴 DB에서 Whisper에게 미리 알려줄 어휘를 만든다.
 
-    **왜 효과가 있나.** Whisper는 앞 문맥을 보고 다음 토큰을 고른다.
-    "안전계좌"를 미리 보여주면 비슷한 발음 후보 중 그쪽 확률이 올라간다.
-    우리가 잡아야 하는 바로 그 단어들의 전사 정확도가 오르는 것이다.
+    **기본값은 꺼짐이다. 켜기 전에 반드시 재볼 것.**
 
-    **부작용도 있다.** 프롬프트에 있는 단어를 없는데도 만들어낼 수 있다.
-    그래서 고위험 신호(C1~C5)와 가중치 높은 단계의 대표 표현만 넣고,
-    흔한 일반 명사는 넣지 않는다. 끄고 싶으면 initial_prompt=""로 두면 된다.
+    이론은 이렇다. Whisper는 앞 문맥을 보고 다음 토큰을 고르므로,
+    "안전계좌"를 미리 보여주면 비슷한 발음 후보 중 그쪽 확률이 올라간다.
+    우리가 잡아야 하는 바로 그 단어들의 전사 정확도가 오를 것이다.
+
+    그런데 실측이 그 이론을 지지하지 않았다 (transcribe_test.py, 19.7초 한국어 발화).
+
+        프롬프트 없음   5.22초   CER 83.7%
+        프롬프트 있음  12.69초   CER 83.7%
+
+    **지연이 2.4배가 되는데 정확도는 그대로였다.** 개입 지연 목표가 1.5초인데
+    전사에만 그만큼을 더 쓰는 것은 감당할 수 없다.
+
+    부작용도 관찰됐다. VAD로 짧게 자른 조각에서 프롬프트에 있던 "은행 직원"이
+    없는데도 전사에 나타났다. 프롬프트 어휘가 곧 위험 키워드라서,
+    이 환각은 **그대로 오탐이 된다.**
+
+    다만 위 측정은 표본 하나이고 그 음성 자체가 상태가 나빴다(합성 화자의 한국어).
+    사람 목소리 5~10개로 다시 재서 판단할 것. 효과가 확인되면 그때 켠다.
     """
     if db is None:
         from .patterns import load_db
@@ -94,10 +107,9 @@ class SpeechToText:
         self.model_size = model_size
         self.language = language
         self.beam_size = beam_size
-        # None이면 패턴 DB에서 자동 생성. 빈 문자열이면 프롬프트를 쓰지 않는다.
-        self.initial_prompt = (
-            build_initial_prompt() if initial_prompt is None else initial_prompt
-        )
+        # 기본은 프롬프트 없음. 켜려면 build_initial_prompt()를 직접 넘긴다.
+        # (근거는 build_initial_prompt의 설명 참조 — 지연 2.4배, 정확도 개선 없음)
+        self.initial_prompt = initial_prompt or ""
         self._device = device
         self._compute_type = compute_type
         self._model = None

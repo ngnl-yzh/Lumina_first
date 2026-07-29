@@ -32,23 +32,34 @@ hiddenimports = [
     "sklearn.neighbors._partition_nodes",
     "scipy.special.cython_special",
     "webrtcvad",
+    "av",              # faster-whisper의 오디오 디코딩
+    "tokenizers",      # faster-whisper의 Whisper 토크나이저
+    "transformers",    # faster_whisper.transcribe가 모듈 수준에서 import한다
+    "huggingface_hub",  # 모델 다운로드
+    "safetensors",
 ]
 hiddenimports += collect_submodules("faster_whisper")
 hiddenimports += collect_submodules("ctranslate2")
 
-# 쓰지 않는 무거운 것들을 뺀다. 넣으면 배포 크기가 배로 뛴다.
+# ── excludes 원칙: 추측으로 넣지 말 것 ────────────────────────────────────────
+#
+# 크기를 줄이겠다고 짐작으로 제외했다가 두 번 깨졌다.
+#
+#   ① torch.testing 제외 → `No module named 'torch.testing'`
+#      torch/__init__.py가 내부에서 import한다. torch 자체가 안 올라온다.
+#   ② tokenizers·transformers 제외 → `No module named 'tokenizers'`
+#      faster_whisper.transcribe가 둘 다 모듈 수준에서 import한다.
+#      transformers는 딥보이스 탐지 전용이라고 짐작했는데 틀렸다.
+#
+# 무엇이 실제로 필요한지는 launcher와 같은 경로를 import해보고 확인한다
+# (scratchpad/deps.py 방식). 아래는 그렇게 확인해 **실제로 안 쓰이는 것**만 남긴 것이다.
+#
+# 부수 효과 — transformers가 들어가므로 EXE에서도 --deepvoice 가 동작한다.
 excludes = [
     "matplotlib", "tkinter", "PyQt5", "PySide2", "PIL.ImageQt",
-    "IPython", "jupyter", "notebook", "pytest", "pyinstaller",
-    # 딥보이스 탐지용. 재현율 18.8%라 기본값이 꺼짐이고,
-    # transformers를 넣으면 1 GB 이상 늘어난다. 필요하면 소스로 실행할 것.
-    "transformers", "tokenizers",
+    "IPython", "jupyter", "notebook",
+    "pytest", "_pytest", "pyinstaller",
 ]
-
-# torch 하위 모듈은 빼면 안 된다.
-# torch/__init__.py가 torch.testing 등을 내부에서 import하므로
-# 제외하면 `No module named 'torch.testing'`으로 torch 자체가 안 올라온다.
-# 실제로 이 함정에 한 번 빠졌다. 크기를 줄이겠다고 건드릴 곳이 아니다.
 
 a = Analysis(
     ["launcher.py"],
