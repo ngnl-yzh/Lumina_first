@@ -24,9 +24,30 @@ DEFAULT_MODEL = "small"
 DEFAULT_LANGUAGE = "ko"
 DEFAULT_BEAM_SIZE = 3
 
-# initial_prompt는 토큰 상한(약 224)이 있어 182개를 다 넣을 수 없다.
+# initial_prompt는 토큰 상한(약 224)이 있어 전 항목을 다 넣을 수 없다.
 # 중요도 순으로 잘라 넣는다.
 PROMPT_MAX_CHARS = 220
+
+# hotwords 기본 활성. **실측 근거가 있다.**
+#
+# 실사용 화면에서 오인식이 눈에 띄었다("카드가 1시 정지되어", "해외 결치 시도").
+# `stt_tune.py`로 통화 채널 + 배경잡음 18 dB 조건에서 설정을 비교했다
+# (시나리오 3건 · 사기 1 · 정상 2).
+#
+#   설정                 CER     키워드 적중   환각 키워드   초/통화
+#   기본                29.0%      57%         0개       5.6
+#   hotwords           15.8%      57%         0개       5.5   ← 채택
+#   initial_prompt     15.0%      64%         0개       7.0
+#   beam 5             28.5%      64%         0개       5.3
+#
+# **hotwords는 지연 비용 없이 CER을 절반으로 줄인다.**
+# initial_prompt는 CER이 근소하게 더 낫지만 25% 느리고, 사용자가 지연도 문제로
+# 지적했으므로 택하지 않았다.
+#
+# 깨끗한 음성에서는 차이가 거의 없다(CER 7.2% → 6.9%). **열화된 조건에서만 효과가 난다** —
+# 그리고 실제 통화가 바로 그 조건이다. 예전 측정이 "효과 없음"으로 결론 난 이유가
+# 이것이라고 본다. 다만 표본이 3건이라 넓은 재측정이 필요하다.
+HOTWORDS_MAX_CHARS = 200
 
 
 @dataclass
@@ -94,6 +115,37 @@ def build_initial_prompt(db=None, max_chars: int = PROMPT_MAX_CHARS) -> str:
     return ", ".join(out)
 
 
+def build_hotwords(db=None, max_chars: int = HOTWORDS_MAX_CHARS) -> str:
+    """Whisper에 미리 알려줄 위험 어휘. `initial_prompt`과 다른 경로로 들어간다.
+
+    프롬프트는 "앞선 대화"로 주입되어 디코딩 전체에 영향을 주고 지연을 늘린다.
+    hotwords는 해당 어휘의 확률만 밀어주므로 **비용이 거의 없다** —
+    실측에서 기본과 같은 속도로 CER이 절반이 됐다.
+
+    담는 순서가 중요하다. 상한이 있으므로 **틀리면 가장 치명적인 것부터** 넣는다.
+    critical은 하나만 잘못 들려도 위험도 하한이 안 걸린다.
+    """
+    if db is None:
+        from .patterns import load_db
+
+        db = load_db()
+
+    terms: list[str] = [c.text for c in db.criticals]
+    for sid in sorted(db.stages, key=lambda s: -db.stages[s].weight):
+        for kw in db.stages[sid].keywords[:3]:
+            if kw.text not in terms:
+                terms.append(kw.text)
+
+    out: list[str] = []
+    total = 0
+    for t in terms:
+        if total + len(t) + 2 > max_chars:
+            break
+        out.append(t)
+        total += len(t) + 2
+    return " ".join(out)
+
+
 class SpeechToText:
     def __init__(
         self,
@@ -103,13 +155,17 @@ class SpeechToText:
         compute_type: str | None = None,
         beam_size: int = DEFAULT_BEAM_SIZE,
         initial_prompt: str | None = None,
+        hotwords: str | None = None,
     ) -> None:
         self.model_size = model_size
         self.language = language
         self.beam_size = beam_size
         # 기본은 프롬프트 없음. 켜려면 build_initial_prompt()를 직접 넘긴다.
-        # (근거는 build_initial_prompt의 설명 참조 — 지연 2.4배, 정확도 개선 없음)
+        # (근거는 build_initial_prompt의 설명 참조 — 지연이 늘고 이득이 hotwords보다 작다)
         self.initial_prompt = initial_prompt or ""
+        # hotwords는 **기본 활성**이다. 근거는 위 HOTWORDS_MAX_CHARS 주석의 실측표.
+        # ""를 명시적으로 넘기면 끌 수 있다.
+        self.hotwords = build_hotwords() if hotwords is None else hotwords
         self._device = device
         self._compute_type = compute_type
         self._model = None
@@ -139,6 +195,7 @@ class SpeechToText:
             vad_filter=False,               # VAD는 이미 앞단에서 했다
             condition_on_previous_text=False,  # 환각이 다음 발화로 번지는 것을 막는다
             initial_prompt=self.initial_prompt or None,
+            hotwords=self.hotwords or None,
         )
         return [
             Transcript(

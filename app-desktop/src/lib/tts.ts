@@ -56,12 +56,19 @@ export function koreanVoiceAvailable(): boolean {
   return ttsAvailable() && pickKoreanVoice() !== null;
 }
 
-/** 경고 문장들을 순서대로 읽는다. */
-export function speakWarning(lines: string[]): void {
-  if (!ttsAvailable()) return;
+/**
+ * 경고 문장들을 순서대로 읽는다.
+ *
+ * @param onDone 재생이 끝나면(또는 재생할 수 없으면) 호출된다.
+ *   **호출자가 이걸로 마이크를 잠근다.** 안 그러면 스피커로 나간 경고가
+ *   그대로 마이크로 들어와 전사되고 채점된다 — 실제로 그랬다.
+ */
+export function speakWarning(lines: string[], onDone?: () => void): void {
+  const finish = () => onDone?.();
+  if (!ttsAvailable()) return finish();
   // 한국어 음성이 없으면 재생하지 않는다 — 영어 엔진이 한글을 읽는 것보다 낫다.
   const v = pickKoreanVoice();
-  if (!v) return;
+  if (!v) return finish();
 
   const synth = window.speechSynthesis;
   synth.cancel(); // 이전 재생이 남아 있으면 겹친다
@@ -73,14 +80,21 @@ export function speakWarning(lines: string[]): void {
     for (let k = 0; k < times; k++) queue.push(line);
   });
 
-  for (const line of queue) {
+  if (queue.length === 0) return finish();
+
+  queue.forEach((line, i) => {
     const u = new SpeechSynthesisUtterance(line);
     u.lang = "ko-KR";
     u.rate = RATE;
     u.pitch = 1.0;
     u.voice = v;
+    if (i === queue.length - 1) {
+      // onend가 안 오는 브라우저가 있어 onerror도 함께 건다.
+      u.onend = finish;
+      u.onerror = finish;
+    }
     synth.speak(u);
-  }
+  });
 }
 
 export function stopSpeaking(): void {

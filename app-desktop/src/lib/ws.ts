@@ -27,6 +27,7 @@ export type ServerMessage =
       matched: Record<string, string[]>; criticals: string[]; pairs: string[];
       benign: string[]; suppressed?: Record<string, string[]>;
       start: number; end: number;
+      stt_ms?: number; score_ms?: number; audio_sec?: number;
       deepvoice?: DeepvoiceInfo }
   | { type: "warning"; quote: string; counter: string[]; control: string;
       cross_check: string; action: string; lines: string[]; tts_tokens: string[];

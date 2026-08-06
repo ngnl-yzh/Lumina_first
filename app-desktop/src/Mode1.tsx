@@ -13,6 +13,8 @@ interface Utterance {
   pairs: string[];
   /** 인용으로 판단해 점수에서 뺀 표현. 왜 안 올렸는지를 보여주기 위해 받는다. */
   suppressed: string[];
+  /** 지연 분해 — 대부분이 STT다. 어디를 줄여야 하는지 화면에서 바로 보이게 한다. */
+  sttMs: number;
   latencyMs: number;
 }
 
@@ -60,7 +62,19 @@ export default function Mode1({
   const tickRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const endRef = useRef<HTMLDivElement>(null);
   const idRef = useRef(0);
-  const lastAudioRef = useRef(0);
+  /** 스트리밍을 시작한 시각. 발화 종료 시각을 벽시계로 환산하는 기준점이다. */
+  const streamStartRef = useRef(0);
+  /**
+   * 경고 음성이 나가는 동안 마이크 입력을 서버로 보내지 않는다.
+   *
+   * 스피커로 나간 경고가 그대로 마이크로 들어와 전사되고 채점됐다. 실측 화면:
+   *   "지금 풍어에서 안전기사이라는 마비 나왔습니다" → 위험도 75% · C1·P1 발동
+   * 미리내가 자기 경고를 사기 통화로 인식한 것이다.
+   *
+   * 서버의 인용 판정은 깨끗한 원문("…“안전계좌”라는 말이 나왔습니다")을 걸러내지만,
+   * STT를 거치며 어미가 뭉개지면 그 방어를 통과한다. 애초에 들여보내지 않는 편이 확실하다.
+   */
+  const mutedRef = useRef(false);
 
   const support = micSupportMessage();
   const addLog = (s: string) =>
@@ -82,8 +96,17 @@ export default function Mode1({
     (msg: ServerMessage) => {
       if (msg.type === "utterance") {
         // 발화 종료부터 판정까지의 지연 — D08이 지표로 삼은 값이다(목표 ≤ 1.5초).
-        // PC 버전에서는 이걸 화면에 띄워 실제로 몇 초인지 눈으로 확인할 수 있게 한다.
-        const latency = lastAudioRef.current ? performance.now() - lastAudioRef.current : 0;
+        //
+        // 예전에는 "마지막 오디오 프레임을 보낸 시각"과 비교했다. 오디오는 끊임없이
+        // 흐르므로 그 값은 **항상 0에 가깝게** 나온다. 실제로 화면에 0.00초가 찍히는데
+        // 사람은 눈에 띄는 텀을 느끼고 있었다 — 지표가 아무것도 재고 있지 않았다.
+        //
+        // 서버가 주는 `end`는 스트림 시작 기준 초다. 스트리밍 시작 시각을 더하면
+        // **말이 끝난 벽시계 시각**이 되고, 지금과의 차이가 사용자가 체감하는 지연이다.
+        const spokenEndAt = streamStartRef.current + (msg.end ?? 0) * 1000;
+        const latency = streamStartRef.current
+          ? Math.max(0, performance.now() - spokenEndAt)
+          : 0;
         const flat = Object.values(msg.matched ?? {}).flat();
         setUtterances((prev) => [
           ...prev,
@@ -96,6 +119,7 @@ export default function Mode1({
             pairs: msg.pairs ?? [],
             suppressed: Object.values(msg.suppressed ?? {}).flat(),
             latencyMs: latency,
+            sttMs: msg.stt_ms ?? 0,
           },
         ]);
         setStages(msg.stages ?? {});
@@ -116,7 +140,16 @@ export default function Mode1({
         setWarning(w);
         addLog("개입 발동");
         if (settings.enableVoiceWarning) {
-          speakWarning([w.quote, ...w.counter, w.control, w.crossCheck, w.action]);
+          // 경고가 나가는 동안 마이크를 잠근다. 안 그러면 자기 경고를 다시 듣는다.
+          mutedRef.current = true;
+          addLog("경고 재생 중 — 마이크 입력 차단");
+          speakWarning(
+            [w.quote, ...w.counter, w.control, w.crossCheck, w.action],
+            () => {
+              mutedRef.current = false;
+              addLog("경고 재생 종료 — 마이크 입력 재개");
+            },
+          );
         }
       } else if (msg.type === "error") {
         setError(msg.message);
@@ -150,10 +183,14 @@ export default function Mode1({
       wsRef.current = ws;
       addLog("연결됨");
 
+      streamStartRef.current = performance.now();
+      mutedRef.current = false;
       const rec = new MicRecorder({
         onFrame: (pcm) => {
-          lastAudioRef.current = performance.now();
-          ws.sendAudio(pcm);
+          // 경고 재생 중에는 **무음을 보낸다.** 아예 안 보내면 서버 VAD의 시간축이
+          // 어긋나 발화 경계와 지연 계산이 틀어진다. 무음을 보내면 진행 중이던 발화가
+          // 정상적으로 닫히고, 그 사이 스피커 소리는 들어가지 않는다.
+          ws.sendAudio(mutedRef.current ? new Float32Array(pcm.length) : pcm);
         },
         onError: setError,
       });
@@ -376,6 +413,7 @@ export default function Mode1({
                     <div className="small mono" style={{ marginBottom: 4 }}>
                       발화 {i + 1} · 위험도 {(u.score * 100).toFixed(0)}%
                       {u.latencyMs > 0 && ` · 판정 지연 ${(u.latencyMs / 1000).toFixed(2)}초`}
+                      {u.sttMs > 0 && ` (전사 ${(u.sttMs / 1000).toFixed(2)}초)`}
                     </div>
                     <Highlighted text={u.text} keywords={u.matched} />
                     {(u.criticals.length > 0 || u.pairs.length > 0) && (

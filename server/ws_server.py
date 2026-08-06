@@ -26,6 +26,7 @@ import asyncio
 import json
 import ssl
 import sys
+import time
 from pathlib import Path
 
 import numpy as np
@@ -150,7 +151,12 @@ async def handle_mode1(ws, svc: Services) -> None:
         for utt in vad.push(decode_audio(message)):
             # STT와 스코어링은 CPU를 오래 잡는다. 이벤트 루프를 막으면
             # 그 사이 들어오는 오디오가 쌓여 지연이 눈덩이처럼 커진다.
+            #
+            # 어디서 시간을 쓰는지 나눠서 잰다. "느리다"만으로는 STT를 줄여야 할지
+            # 스코어러를 고쳐야 할지 알 수 없다 — 실측상 거의 전부 STT다.
+            t0 = time.perf_counter()
             text = await loop.run_in_executor(None, svc.stt.transcribe_text, utt.audio)
+            stt_ms = (time.perf_counter() - t0) * 1000.0
             if not text:
                 continue
 
@@ -160,7 +166,9 @@ async def handle_mode1(ws, svc: Services) -> None:
                 dv["fake_prob"] if (dv["usable"] and svc.deepvoice_scoring) else 0.0
             )
 
+            t1 = time.perf_counter()
             result = state.add_utterance(text, deepvoice_score=dv_for_score)
+            score_ms = (time.perf_counter() - t1) * 1000.0
             await ws.send(json.dumps({
                 "type": "utterance",
                 "text": text,
@@ -179,6 +187,10 @@ async def handle_mode1(ws, svc: Services) -> None:
                 # 인용으로 판단해 점수에서 뺀 표현. 화면에 "왜 안 올렸는가"를 보이려면 필요하다 —
                 # 근거 패널이 올린 이유만 설명하면 안 올린 판단은 검증할 수 없다.
                 "suppressed": result.suppressed,
+                # 처리 시간 분해 — 어디를 줄여야 하는지 화면에서 바로 보이게 한다
+                "stt_ms": round(stt_ms, 1),
+                "score_ms": round(score_ms, 1),
+                "audio_sec": round(utt.duration, 2),
                 "deepvoice": dv,
             }, ensure_ascii=False))
 
