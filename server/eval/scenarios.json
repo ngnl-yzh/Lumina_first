@@ -1,0 +1,505 @@
+{
+  "meta": {
+    "version": "0.1.0",
+    "purpose": "모드 1 탐지 성능 평가 — 탐지율과 오탐률을 함께 잰다",
+    "authoring_note": "D08 §07이 요구한 '패턴 DB 작성자와 평가 시나리오 작성자 분리'를 완전히는 만족하지 못한다. 이 세트를 만든 주체는 pattern_db.json의 benign 9개와 critical 5개를 이미 본 상태였다(8단계 키워드 72개는 보지 않았다). 따라서 여기서 나온 수치는 '완전히 독립적인 평가'가 아니며, 상한으로 읽어야 한다. 다만 사기 시나리오의 발화는 아래 external_sources의 공개 자료에서 가져왔고, 정상 시나리오는 DB를 참조하지 않고 일상 대화에서 작성했다.",
+    "known_limitation": "실제 통화 오디오가 아니라 텍스트다. STT 오차의 영향은 별도 항목(stt_noise)으로만 근사한다.",
+    "external_sources": [
+      {
+        "id": "SBS-N1008502009",
+        "title": "버젓이 '계좌번호 말씀 말라'…사기범 실제 목소리 공개",
+        "url": "https://news.sbs.co.kr/news/endPage.do?news_id=N1008502009",
+        "used_for": "F-A-04 — 사기범이 예방 문구를 흉내내는 실제 녹취 인용"
+      },
+      {
+        "id": "DGPOLICE",
+        "title": "대구경찰청 보이스피싱 안내",
+        "url": "https://www.dgpolice.go.kr/PageLink.do?link=%2Fdgpo%2F05%2F501",
+        "used_for": "F-A-01, F-A-02 — 검찰→금감원 2인 릴레이 수법 전개 순서"
+      },
+      {
+        "id": "KBTHINK",
+        "title": "보이스피싱 수법 유형별 사례와 예방법",
+        "url": "https://kbthink.com/fraud/voice_phising.html",
+        "used_for": "유형 3분류(기관사칭·대출사기·지인사칭)와 각 전개"
+      }
+    ],
+    "scoring_note": "expect는 통화가 끝났을 때 도달해야 할 최소 등급이다. alert_by는 '몇 번째 발화까지 위험 판정이 나와야 하는가' — 자금 이동 발화보다 앞서야 의미가 있다."
+  },
+
+  "scenarios": [
+    {
+      "id": "F-A-01",
+      "label": "fraud",
+      "title": "검찰 사칭 — 표준 전개",
+      "route_expected": "A",
+      "source": "DGPOLICE",
+      "expect": "위험",
+      "alert_by": 5,
+      "utterances": [
+        {"t": 0.0,  "speaker": "remote", "text": "여보세요, 김철수 씨 본인 되십니까?"},
+        {"t": 6.0,  "speaker": "remote", "text": "서울중앙지방검찰청 첨단범죄수사부 박정호 검사입니다."},
+        {"t": 14.0, "speaker": "remote", "text": "선생님 명의로 개설된 계좌가 대포통장으로 사용되어 자금세탁 사건에 연루되었습니다."},
+        {"t": 25.0, "speaker": "remote", "text": "지금 소명하지 않으시면 공범으로 간주되어 체포영장이 청구될 수 있습니다."},
+        {"t": 36.0, "speaker": "remote", "text": "이 사건은 수사 기밀 사항이라 가족에게도 말씀하시면 안 됩니다."},
+        {"t": 48.0, "speaker": "remote", "text": "자산 보호를 위해 국가안전계좌로 자금을 이체하셔야 합니다."},
+        {"t": 60.0, "speaker": "remote", "text": "오늘까지 처리하지 않으면 계좌가 전부 동결됩니다."}
+      ]
+    },
+    {
+      "id": "F-A-02",
+      "label": "fraud",
+      "title": "금감원 사칭 — 2인 릴레이 후반부",
+      "route_expected": "A",
+      "source": "DGPOLICE",
+      "expect": "위험",
+      "alert_by": 4,
+      "utterances": [
+        {"t": 0.0,  "speaker": "remote", "text": "금융감독원 불법금융대응단 이수진 과장입니다."},
+        {"t": 8.0,  "speaker": "remote", "text": "검찰과 합동수사 중인 건으로 선생님 통장 거래내역 확인이 필요합니다."},
+        {"t": 18.0, "speaker": "remote", "text": "명의도용 피해가 확인되어 예금 보호 조치를 진행해야 합니다."},
+        {"t": 30.0, "speaker": "remote", "text": "지금 은행에 가시더라도 창구에서 이 내용을 말씀하시면 수사에 지장이 생깁니다."},
+        {"t": 42.0, "speaker": "remote", "text": "제가 불러드리는 계좌로 전액 이체해 주시면 확인 후 바로 돌려드립니다."}
+      ]
+    },
+    {
+      "id": "F-A-03",
+      "label": "fraud",
+      "title": "검찰 사칭 — 원격제어 앱 설치 유도",
+      "route_expected": "A",
+      "source": "KBTHINK",
+      "expect": "위험",
+      "alert_by": 4,
+      "utterances": [
+        {"t": 0.0,  "speaker": "remote", "text": "서울남부지검 수사관입니다. 확인할 것이 있어 연락드렸습니다."},
+        {"t": 9.0,  "speaker": "remote", "text": "선생님 계좌가 범죄 자금 흐름에 포함된 정황이 포착되었습니다."},
+        {"t": 20.0, "speaker": "remote", "text": "지금 문자로 보내드린 링크로 검찰 전용 보안앱을 설치해 주세요."},
+        {"t": 31.0, "speaker": "remote", "text": "설치되면 원격제어로 제가 직접 확인해 드리겠습니다."},
+        {"t": 42.0, "speaker": "remote", "text": "수사 기밀이니 누구에게도 알리지 마시고 통화 유지해 주십시오."}
+      ]
+    },
+    {
+      "id": "F-A-04",
+      "label": "fraud",
+      "title": "예방 문구 흉내 — 실제 녹취 기반 회피형",
+      "route_expected": "A",
+      "source": "SBS-N1008502009",
+      "note": "사기범이 예방 문구를 그대로 말해 신뢰를 얻는다. 실제 녹취에서 확인된 수법이며, benign 감점이 오히려 사기범을 돕는지 확인하는 시나리오다.",
+      "expect": "위험",
+      "alert_by": 6,
+      "utterances": [
+        {"t": 0.0,  "speaker": "remote", "text": "안녕하세요, 금융감독원 민원상담팀입니다."},
+        {"t": 8.0,  "speaker": "remote", "text": "개인정보보호법에 의거하여 주민등록번호, 계좌번호, 통장 비밀번호 절대로 말씀하시면 안 되시고요."},
+        {"t": 20.0, "speaker": "remote", "text": "본인 확인 절차만 간단히 진행하겠습니다. 정규직이십니까? 4대 보험 적용되십니까?"},
+        {"t": 33.0, "speaker": "remote", "text": "조용한 공간으로, 독립적인 공간으로 가셔서 통화 안 되십니까?"},
+        {"t": 45.0, "speaker": "remote", "text": "선생님 명의가 대포통장에 도용되어 수사가 진행 중입니다."},
+        {"t": 58.0, "speaker": "remote", "text": "본인 자산까지 피해를 입었을 경우 국가에서 보상해 주는 제도가 있습니다. 신청해 드릴까요?"},
+        {"t": 72.0, "speaker": "remote", "text": "그럼 안전계좌로 자금을 옮기는 절차부터 진행하겠습니다."}
+      ]
+    },
+    {
+      "id": "F-B-01",
+      "label": "fraud",
+      "title": "자녀 사칭 — 메신저피싱 전형",
+      "route_expected": "B",
+      "source": "KBTHINK",
+      "expect": "위험",
+      "alert_by": 4,
+      "utterances": [
+        {"t": 0.0,  "speaker": "remote", "text": "엄마 나야. 폰이 고장나서 친구 폰으로 전화했어."},
+        {"t": 8.0,  "speaker": "remote", "text": "지금 급하게 처리할 게 있는데 내 폰으로는 인증이 안 돼."},
+        {"t": 18.0, "speaker": "remote", "text": "친구한테 빌린 돈을 오늘까지 꼭 보내야 하거든."},
+        {"t": 28.0, "speaker": "remote", "text": "아빠한테는 말하지 마. 괜히 걱정하실까 봐 그래."},
+        {"t": 38.0, "speaker": "remote", "text": "계좌번호 보낼 테니까 300만원만 지금 송금해줘."}
+      ]
+    },
+    {
+      "id": "F-B-02",
+      "label": "fraud",
+      "title": "딥보이스 결합 — 자녀 목소리 사칭",
+      "route_expected": "B",
+      "source": "KBTHINK",
+      "note": "deepvoice_score를 함께 주입해 평가한다.",
+      "deepvoice_score": 0.93,
+      "expect": "위험",
+      "alert_by": 4,
+      "utterances": [
+        {"t": 0.0,  "speaker": "remote", "text": "아빠 나 지금 사고가 났어."},
+        {"t": 7.0,  "speaker": "remote", "text": "상대방이 합의금 안 주면 바로 고소한다고 해서 지금 너무 무서워."},
+        {"t": 18.0, "speaker": "remote", "text": "엄마한테는 절대 말하지 마. 나 진짜 혼나."},
+        {"t": 28.0, "speaker": "remote", "text": "지금 당장 500만원만 이 계좌로 송금해줘. 시간이 없어."}
+      ]
+    },
+    {
+      "id": "F-B-03",
+      "label": "fraud",
+      "title": "지인 사칭 — 느린 전개 (긴 통화)",
+      "route_expected": "B",
+      "source": "KBTHINK",
+      "note": "사기 신호가 통화 후반에 몰린다. 조기 탐지가 아니라 '결국 잡는가'를 본다.",
+      "expect": "위험",
+      "alert_by": 7,
+      "utterances": [
+        {"t": 0.0,   "speaker": "remote", "text": "형 오랜만이야. 잘 지냈어?"},
+        {"t": 10.0,  "speaker": "remote", "text": "나 요즘 사업 시작했는데 생각보다 잘 안 풀리네."},
+        {"t": 25.0,  "speaker": "remote", "text": "거래처에서 대금이 밀려서 좀 곤란한 상황이야."},
+        {"t": 45.0,  "speaker": "remote", "text": "혹시 잠깐만 돈 좀 융통해줄 수 있을까?"},
+        {"t": 70.0,  "speaker": "remote", "text": "내일이 마감이라 오늘 안에 입금이 안 되면 부도야."},
+        {"t": 95.0,  "speaker": "remote", "text": "형수님한테는 말하지 말고 우리끼리만 알고 있자."},
+        {"t": 120.0, "speaker": "remote", "text": "지금 바로 이 계좌로 송금해주면 다음 주에 갚을게."}
+      ]
+    },
+    {
+      "id": "F-C-01",
+      "label": "fraud",
+      "title": "대출빙자 — 저금리 전환 미끼",
+      "route_expected": "C",
+      "source": "KBTHINK",
+      "expect": "위험",
+      "alert_by": 4,
+      "utterances": [
+        {"t": 0.0,  "speaker": "remote", "text": "안녕하세요, 우리캐피탈 대출상담사입니다."},
+        {"t": 8.0,  "speaker": "remote", "text": "정부지원 저금리 대환대출 대상자로 선정되셨습니다."},
+        {"t": 19.0, "speaker": "remote", "text": "기존 대출을 먼저 상환하셔야 신규 승인이 가능합니다."},
+        {"t": 31.0, "speaker": "remote", "text": "상환금을 지금 불러드리는 계좌로 입금해 주시면 바로 처리됩니다."},
+        {"t": 43.0, "speaker": "remote", "text": "오늘까지만 유효한 조건이라 지금 결정하셔야 합니다."}
+      ]
+    },
+    {
+      "id": "F-C-02",
+      "label": "fraud",
+      "title": "대출빙자 — 신용등급 조작 미끼",
+      "route_expected": "C",
+      "source": "KBTHINK",
+      "expect": "위험",
+      "alert_by": 4,
+      "utterances": [
+        {"t": 0.0,  "speaker": "remote", "text": "고객님 신용등급이 낮아 현재 조건으로는 승인이 어렵습니다."},
+        {"t": 11.0, "speaker": "remote", "text": "저희가 등급을 올려드리는 작업을 도와드릴 수 있습니다."},
+        {"t": 23.0, "speaker": "remote", "text": "작업비 명목으로 선입금이 필요하고 대출 실행 시 전액 환급됩니다."},
+        {"t": 36.0, "speaker": "remote", "text": "지금 바로 송금해 주셔야 오늘 안에 처리가 됩니다."}
+      ]
+    },
+    {
+      "id": "F-X-01",
+      "label": "fraud",
+      "title": "짧은 통화 — 핵심 신호만",
+      "route_expected": "A",
+      "source": "DGPOLICE",
+      "note": "발화 2개로 끝난다. 짧아도 잡아야 하는 케이스.",
+      "expect": "위험",
+      "alert_by": 2,
+      "utterances": [
+        {"t": 0.0, "speaker": "remote", "text": "서울중앙지검 수사관입니다."},
+        {"t": 8.0, "speaker": "remote", "text": "안전계좌로 즉시 이체하십시오."}
+      ]
+    },
+
+    {
+      "id": "B-01",
+      "label": "benign",
+      "title": "예방 교육 — 부모에게 설명하는 자녀",
+      "note": "미리내가 절대 잡으면 안 되는 대화. 위험 단어가 전부 나오지만 전부 부정문이다.",
+      "expect": "안전",
+      "utterances": [
+        {"t": 0.0,  "speaker": "remote", "text": "엄마, 요즘 보이스피싱 진짜 조심해야 돼."},
+        {"t": 8.0,  "speaker": "remote", "text": "검찰청이라고 하면서 전화 오면 그거 100% 사기야."},
+        {"t": 18.0, "speaker": "remote", "text": "안전계좌로 이체하라는 말 나오면 바로 끊어. 그런 계좌는 존재하지 않아."},
+        {"t": 30.0, "speaker": "remote", "text": "수사 기밀이니까 가족에게도 말하지 말라고 하는 것도 다 수법이야."},
+        {"t": 42.0, "speaker": "remote", "text": "무조건 나한테 전화하고 112에 신고해."}
+      ]
+    },
+    {
+      "id": "B-02",
+      "label": "benign",
+      "title": "미리내 경고문을 소리내어 읽는 상황",
+      "note": "앱이 띄운 경고를 사용자가 읽으면 그 텍스트가 다시 마이크로 들어간다. 자기 경고에 자기가 반응하면 안 된다.",
+      "expect": "안전",
+      "utterances": [
+        {"t": 0.0,  "speaker": "remote", "text": "방금 상대방이 안전계좌라고 말했습니다."},
+        {"t": 8.0,  "speaker": "remote", "text": "안전계좌라는 것은 존재하지 않습니다. 어떤 수사기관도 그런 계좌를 안내하지 않습니다."},
+        {"t": 20.0, "speaker": "remote", "text": "지금 전화를 끊으셔도 아무 불이익이 없습니다."},
+        {"t": 30.0, "speaker": "remote", "text": "112에 신고하세요."}
+      ]
+    },
+    {
+      "id": "B-03",
+      "label": "benign",
+      "title": "뉴스 시청 중 대화",
+      "expect": "안전",
+      "utterances": [
+        {"t": 0.0,  "speaker": "remote", "text": "어제 뉴스 봤어? 검찰 사칭 보이스피싱이 또 늘었대."},
+        {"t": 10.0, "speaker": "remote", "text": "자금세탁에 연루됐다고 겁주고 안전계좌로 보내라고 한다더라."},
+        {"t": 22.0, "speaker": "remote", "text": "피해액이 작년보다 훨씬 늘었대. 진짜 조심해야 돼."},
+        {"t": 34.0, "speaker": "remote", "text": "그런 전화 오면 그냥 끊고 112에 신고하는 게 답이야."}
+      ]
+    },
+    {
+      "id": "B-04",
+      "label": "benign",
+      "title": "실제 은행 상담원 — 정상 업무",
+      "note": "진짜 은행원도 본인 확인을 하고 영업점 방문을 안내한다.",
+      "expect": "안전",
+      "utterances": [
+        {"t": 0.0,  "speaker": "remote", "text": "안녕하세요, 국민은행 고객센터입니다."},
+        {"t": 8.0,  "speaker": "remote", "text": "본인 확인 절차 먼저 진행하겠습니다. 생년월일 앞 여섯 자리 말씀해 주시겠어요?"},
+        {"t": 20.0, "speaker": "remote", "text": "신청하신 건은 서류가 필요해서 가까운 영업점 방문해 주셔야 합니다."},
+        {"t": 33.0, "speaker": "remote", "text": "천천히 생각해 보시고 편하실 때 방문하시면 됩니다."}
+      ]
+    },
+    {
+      "id": "B-05",
+      "label": "benign",
+      "title": "실제 자녀 — 진짜로 돈이 필요한 상황",
+      "note": "가장 어려운 케이스. 사기 시나리오 F-B-01과 표면 구조가 거의 같다. 이걸 위험으로 잡으면 실사용이 불가능해진다.",
+      "expect": "안전",
+      "utterances": [
+        {"t": 0.0,  "speaker": "remote", "text": "엄마 나야. 잘 지냈어?"},
+        {"t": 8.0,  "speaker": "remote", "text": "다음 주에 등록금 내야 하는데 20만원 정도 모자라서."},
+        {"t": 20.0, "speaker": "remote", "text": "혹시 여유 되면 이번 주말까지 보내줄 수 있어?"},
+        {"t": 32.0, "speaker": "remote", "text": "안 되면 알바비 들어올 때까지 기다려도 괜찮아."}
+      ]
+    },
+    {
+      "id": "B-06",
+      "label": "benign",
+      "title": "실제 대출 상담 — 정상 금융사",
+      "expect": "안전",
+      "utterances": [
+        {"t": 0.0,  "speaker": "remote", "text": "안녕하세요, 신한은행 여신상담 담당자입니다."},
+        {"t": 9.0,  "speaker": "remote", "text": "문의하신 전세자금대출 관련해서 안내드리려고 연락드렸습니다."},
+        {"t": 21.0, "speaker": "remote", "text": "금리는 조건에 따라 달라지고 한도는 심사 후에 확정됩니다."},
+        {"t": 34.0, "speaker": "remote", "text": "서류는 영업점 방문하셔서 제출하시면 되고, 천천히 생각해 보시고 연락 주세요."}
+      ]
+    },
+    {
+      "id": "B-07",
+      "label": "benign",
+      "title": "실제 경찰 — 참고인 조사 연락",
+      "note": "진짜 수사기관도 전화한다. 이걸 무조건 위험으로 잡으면 안 된다.",
+      "expect": "안전",
+      "utterances": [
+        {"t": 0.0,  "speaker": "remote", "text": "안녕하세요, 광주 서부경찰서 수사과입니다."},
+        {"t": 9.0,  "speaker": "remote", "text": "지난달 신고하신 건으로 참고인 조사 일정을 잡으려고 연락드렸습니다."},
+        {"t": 22.0, "speaker": "remote", "text": "편하신 날짜에 경찰서로 직접 방문해 주시면 됩니다."},
+        {"t": 34.0, "speaker": "remote", "text": "궁금하신 점 있으면 대표번호로 다시 확인 전화 주셔도 됩니다."}
+      ]
+    },
+    {
+      "id": "B-08",
+      "label": "benign",
+      "title": "일상 잡담",
+      "expect": "안전",
+      "utterances": [
+        {"t": 0.0,  "speaker": "remote", "text": "오늘 날씨가 참 좋네요. 점심은 드셨어요?"},
+        {"t": 10.0, "speaker": "remote", "text": "어제 친구를 만났는데 오랜만이라 반갑더라고요."},
+        {"t": 24.0, "speaker": "remote", "text": "주말에 시간 되시면 같이 산책이나 가시죠."},
+        {"t": 36.0, "speaker": "remote", "text": "그럼 그때 뵙겠습니다. 조심히 들어가세요."}
+      ]
+    },
+    {
+      "id": "B-09",
+      "label": "benign",
+      "title": "카드사 정상 안내 — 이상거래 확인",
+      "note": "정상 카드사도 '명의도용', '이체', '확인'을 말한다.",
+      "expect": "안전",
+      "utterances": [
+        {"t": 0.0,  "speaker": "remote", "text": "삼성카드 이상거래 모니터링팀입니다."},
+        {"t": 9.0,  "speaker": "remote", "text": "조금 전 해외 결제 승인 건이 있어서 본인 확인 절차로 연락드렸습니다."},
+        {"t": 23.0, "speaker": "remote", "text": "본인이 하신 게 맞으면 그대로 두시면 되고, 아니면 카드를 정지해 드리겠습니다."},
+        {"t": 37.0, "speaker": "remote", "text": "천천히 생각해 보시고 앱에서 직접 확인하셔도 됩니다."}
+      ]
+    },
+    {
+      "id": "B-10",
+      "label": "benign",
+      "title": "피해자가 상담원에게 피해 상황을 설명하는 통화",
+      "note": "1332 상담. 피해자가 사기범이 한 말을 그대로 인용한다. 인용은 사기가 아니다.",
+      "expect": "안전",
+      "utterances": [
+        {"t": 0.0,  "speaker": "remote", "text": "제가 방금 이상한 전화를 받았는데요."},
+        {"t": 10.0, "speaker": "remote", "text": "서울중앙지검 검사라면서 제 계좌가 자금세탁에 연루됐다고 하더라고요."},
+        {"t": 25.0, "speaker": "remote", "text": "안전계좌로 이체하라고 했고 가족에게도 말하지 말라고 했어요."},
+        {"t": 40.0, "speaker": "remote", "text": "이게 보이스피싱 맞죠? 아직 돈은 안 보냈어요."}
+      ]
+    },
+    {
+      "id": "B-11",
+      "label": "benign",
+      "title": "드라마·영화 대사 재생",
+      "note": "TV에서 나오는 소리가 마이크에 들어간다.",
+      "expect": "안전",
+      "utterances": [
+        {"t": 0.0,  "speaker": "remote", "text": "당신 지금 체포영장 발부된 거 알고 있나?"},
+        {"t": 9.0,  "speaker": "remote", "text": "검찰이 이미 다 파악하고 있어. 순순히 자백하는 게 나을 거야."},
+        {"t": 22.0, "speaker": "remote", "text": "컷! 좋았어요. 이번 테이크 갑시다."}
+      ]
+    },
+    {
+      "id": "B-12",
+      "label": "benign",
+      "title": "보험사 만기 안내",
+      "expect": "안전",
+      "utterances": [
+        {"t": 0.0,  "speaker": "remote", "text": "안녕하세요, 한화생명 고객상담센터입니다."},
+        {"t": 9.0,  "speaker": "remote", "text": "가입하신 저축보험이 다음 달 만기 예정이라 안내드립니다."},
+        {"t": 22.0, "speaker": "remote", "text": "만기금은 등록하신 계좌로 자동 이체됩니다."},
+        {"t": 35.0, "speaker": "remote", "text": "변경을 원하시면 영업점 방문하시거나 앱에서 신청하시면 됩니다."}
+      ]
+    },
+
+    {
+      "id": "B-13",
+      "label": "benign",
+      "title": "부동산 중개사 — 계약금 이체 안내",
+      "note": "정당한 통화인데 '계좌'·'이체'·'오늘까지'가 전부 나온다. 실사용에서 가장 잡히기 쉬운 부류다.",
+      "expect": "안전",
+      "utterances": [
+        {"t": 0.0,  "speaker": "remote", "text": "안녕하세요, 봉선동 대박공인중개사입니다."},
+        {"t": 10.0, "speaker": "remote", "text": "어제 보신 아파트 계약 진행하시기로 하셨죠?"},
+        {"t": 24.0, "speaker": "remote", "text": "계약금은 집주인 명의 계좌로 이체하시면 됩니다."},
+        {"t": 38.0, "speaker": "remote", "text": "가능하면 오늘까지 넣어주셔야 다른 분한테 안 넘어갑니다."},
+        {"t": 52.0, "speaker": "remote", "text": "등기부등본이랑 신분증은 사무실 오실 때 확인하시면 돼요."}
+      ]
+    },
+    {
+      "id": "B-14",
+      "label": "benign",
+      "title": "중고거래 — 계좌 송금 약속",
+      "expect": "안전",
+      "utterances": [
+        {"t": 0.0,  "speaker": "remote", "text": "당근에서 노트북 보고 연락드렸는데요."},
+        {"t": 10.0, "speaker": "remote", "text": "혹시 아직 판매 중이신가요?"},
+        {"t": 20.0, "speaker": "remote", "text": "그럼 계좌번호 알려주시면 지금 바로 송금할게요."},
+        {"t": 32.0, "speaker": "remote", "text": "택배는 내일 보내주시면 됩니다."}
+      ]
+    },
+    {
+      "id": "B-15",
+      "label": "benign",
+      "title": "친구에게 실제로 돈 빌리는 통화",
+      "note": "F-B-03(지인 사칭)과 표면 구조가 거의 같다. 이 둘을 가르지 못하면 실사용이 불가능하다.",
+      "expect": "안전",
+      "utterances": [
+        {"t": 0.0,  "speaker": "remote", "text": "야 나야. 통화 괜찮아?"},
+        {"t": 10.0, "speaker": "remote", "text": "이번 달에 카드값이 좀 많이 나와서."},
+        {"t": 24.0, "speaker": "remote", "text": "혹시 오십만원만 잠깐 빌려줄 수 있어?"},
+        {"t": 38.0, "speaker": "remote", "text": "월급날 바로 계좌로 보낼게. 안 되면 괜찮고."}
+      ]
+    },
+    {
+      "id": "B-16",
+      "label": "benign",
+      "title": "회사 경리 — 거래처 입금 확인",
+      "expect": "안전",
+      "utterances": [
+        {"t": 0.0,  "speaker": "remote", "text": "과장님, 경리팀입니다."},
+        {"t": 9.0,  "speaker": "remote", "text": "어제 요청하신 대금 이체 건 확인차 연락드렸습니다."},
+        {"t": 22.0, "speaker": "remote", "text": "거래처 계좌로 오늘 중 입금 처리하면 될까요?"},
+        {"t": 36.0, "speaker": "remote", "text": "세금계산서는 발행되는 대로 전달드리겠습니다."}
+      ]
+    },
+    {
+      "id": "B-17",
+      "label": "benign",
+      "title": "실제 세무서 — 종합소득세 안내",
+      "note": "진짜 공공기관도 전화한다. B-07(경찰)과 함께 기관 사칭 오탐의 반례.",
+      "expect": "안전",
+      "utterances": [
+        {"t": 0.0,  "speaker": "remote", "text": "안녕하세요, 광주세무서 소득세과입니다."},
+        {"t": 10.0, "speaker": "remote", "text": "종합소득세 신고 기한이 지나서 안내 연락드렸습니다."},
+        {"t": 24.0, "speaker": "remote", "text": "홈택스에서 직접 신고하시거나 세무서 방문하셔도 됩니다."},
+        {"t": 38.0, "speaker": "remote", "text": "궁금하신 점은 국세상담센터 126번으로 문의해 주세요."}
+      ]
+    },
+    {
+      "id": "B-18",
+      "label": "benign",
+      "title": "학교 담임교사 연락",
+      "expect": "안전",
+      "utterances": [
+        {"t": 0.0,  "speaker": "remote", "text": "안녕하세요, 3학년 2반 담임입니다."},
+        {"t": 10.0, "speaker": "remote", "text": "민수가 오늘 체육 시간에 발목을 좀 접질렸어요."},
+        {"t": 24.0, "speaker": "remote", "text": "보건실에서 처치했고 지금은 괜찮은데 알려드리는 게 맞을 것 같아서요."},
+        {"t": 40.0, "speaker": "remote", "text": "혹시 병원 가보실 거면 오늘 조퇴시켜도 될까요?"}
+      ]
+    },
+    {
+      "id": "B-19",
+      "label": "benign",
+      "title": "택배 배송 안내",
+      "expect": "안전",
+      "utterances": [
+        {"t": 0.0,  "speaker": "remote", "text": "안녕하세요, CJ대한통운 기사입니다."},
+        {"t": 9.0,  "speaker": "remote", "text": "지금 배송 중인데 부재중이신 것 같아서요."},
+        {"t": 21.0, "speaker": "remote", "text": "경비실에 맡겨드려도 될까요?"},
+        {"t": 32.0, "speaker": "remote", "text": "네 알겠습니다. 문 앞에 두겠습니다."}
+      ]
+    },
+    {
+      "id": "B-20",
+      "label": "benign",
+      "title": "은행 앱 오류 문의 — 사용자가 먼저 건 전화",
+      "note": "사용자가 '이체가 안 된다'고 말한다. 위험 어휘가 사용자 쪽에서 나오는 경우.",
+      "expect": "안전",
+      "utterances": [
+        {"t": 0.0,  "speaker": "remote", "text": "네 고객님, 무엇을 도와드릴까요?"},
+        {"t": 10.0, "speaker": "remote", "text": "계좌 이체가 오류 나신다는 말씀이시죠?"},
+        {"t": 24.0, "speaker": "remote", "text": "일일 이체 한도가 초과되신 것으로 보입니다."},
+        {"t": 38.0, "speaker": "remote", "text": "한도 상향은 영업점 방문하시거나 앱에서 신청 가능합니다."}
+      ]
+    },
+    {
+      "id": "B-21",
+      "label": "benign",
+      "title": "보이스피싱 예방 교육 강연",
+      "note": "강사가 수법을 통째로 설명한다. 위험 표현이 가장 많이 나오는 정상 상황이다.",
+      "expect": "안전",
+      "utterances": [
+        {"t": 0.0,  "speaker": "remote", "text": "오늘은 보이스피싱 수법을 하나씩 살펴보겠습니다."},
+        {"t": 14.0, "speaker": "remote", "text": "먼저 검찰청 수사관이라고 신분을 밝히는 것으로 시작합니다."},
+        {"t": 30.0, "speaker": "remote", "text": "그다음 명의가 도용돼 자금세탁에 연루됐다고 겁을 줍니다."},
+        {"t": 48.0, "speaker": "remote", "text": "수사 기밀이니 가족에게도 말하지 말라는 말이 반드시 나옵니다."},
+        {"t": 66.0, "speaker": "remote", "text": "마지막에 안전계좌로 이체하라고 하는데, 그런 계좌는 존재하지 않습니다."},
+        {"t": 84.0, "speaker": "remote", "text": "이런 전화를 받으시면 끊고 112에 신고하시면 됩니다."}
+      ]
+    },
+    {
+      "id": "B-22",
+      "label": "benign",
+      "title": "통신사 요금제 안내",
+      "expect": "안전",
+      "utterances": [
+        {"t": 0.0,  "speaker": "remote", "text": "안녕하세요, KT 고객센터입니다."},
+        {"t": 9.0,  "speaker": "remote", "text": "사용하시는 요금제보다 저렴한 상품이 나와서 안내드립니다."},
+        {"t": 24.0, "speaker": "remote", "text": "약정 없이 변경 가능하고 요금은 자동이체 계좌 그대로 유지됩니다."},
+        {"t": 40.0, "speaker": "remote", "text": "천천히 생각해 보시고 필요하시면 다시 연락 주세요."}
+      ]
+    },
+    {
+      "id": "B-23",
+      "label": "benign",
+      "title": "병원 예약 확인",
+      "expect": "안전",
+      "utterances": [
+        {"t": 0.0,  "speaker": "remote", "text": "안녕하세요, 전남대병원 진료협력센터입니다."},
+        {"t": 11.0, "speaker": "remote", "text": "다음 주 화요일 오전 10시 예약 확인차 연락드렸습니다."},
+        {"t": 26.0, "speaker": "remote", "text": "검사가 있어서 전날 저녁부터 금식하셔야 합니다."},
+        {"t": 42.0, "speaker": "remote", "text": "변경 원하시면 대표번호로 미리 연락 주세요."}
+      ]
+    },
+    {
+      "id": "B-24",
+      "label": "benign",
+      "title": "자녀가 부모에게 사기 전화를 실시간 중계",
+      "note": "부모가 사기 전화를 받는 중에 자녀에게 상황을 전달한다. 인용이 실시간으로 일어나는 경우.",
+      "expect": "안전",
+      "utterances": [
+        {"t": 0.0,  "speaker": "remote", "text": "엄마 지금 무슨 전화 받고 있는 거야?"},
+        {"t": 12.0, "speaker": "remote", "text": "검찰청에서 왔다고 그래? 계좌가 연루됐대?"},
+        {"t": 28.0, "speaker": "remote", "text": "안전계좌로 옮기라고 한다고? 그거 사기야 끊어."},
+        {"t": 44.0, "speaker": "remote", "text": "내가 112에 신고할 테니까 아무것도 하지 마."}
+      ]
+    }
+  ]
+}

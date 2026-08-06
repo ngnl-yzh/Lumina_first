@@ -25,8 +25,27 @@ import numpy as np
 
 SAMPLE_RATE = 16_000
 
-# 실제로 로드되는 것을 확인한 모델. 라벨은 {0:'fake', 1:'real'}, 16 kHz 입력.
-DEFAULT_MODEL = "MelodyMachine/Deepfake-audio-detection-V2"
+# 실제로 로드되는 것을 확인한 모델. 16 kHz 입력.
+#
+# ## 왜 바꿨나 — 같은 XTTS 표본 11개로 잰 비교
+#
+#   MelodyMachine/Deepfake-audio-detection-V2   재현율 36.4% [15.2, 64.6]
+#   motheecreator/Deepfake-audio-detection      재현율 81.8% [52.3, 94.9]   ← 현재
+#
+# 재현율만 오른 게 아니라 **판정이 일관적**이다. 이전 모델은 완전히 같은 조건에서 만든
+# 복제음에 1.0000과 0.0000을 내는 양극단 분포였다 — 임계값으로 해결할 수 없는 형태다.
+# 새 모델은 9건이 0.978~1.000, 놓친 2건이 0.000·0.027로 갈린다.
+#
+# ## 그래도 기본값은 여전히 **꺼짐**이다
+#
+# **오탐률을 측정하지 못했다.** 저장소의 모든 음성이 XTTS 산물이라
+# 사람 음성 표본이 하나도 없다. 재현율만으로는 탐지기를 평가할 수 없다 —
+# 전부 "가짜"라고 답해도 재현율은 100%가 된다.
+#
+# 팀원 녹음이 확보되면 한 줄로 확인한다.
+#     python benchmark_deepvoice.py --synthetic out/stat/clone --human 녹음폴더/
+# 그때까지는 `--deepvoice`로 **표시만** 하고 위험도 점수는 건드리지 않는다.
+DEFAULT_MODEL = "motheecreator/Deepfake-audio-detection"
 
 # 이 값을 넘으면 "합성 의심". 스코어러의 가중 반영 임계값과 같은 값을 쓴다.
 DEFAULT_THRESHOLD = 0.7

@@ -48,12 +48,15 @@ def main() -> int:
     p.add_argument("--human", nargs="*", default=[],
                    help="사람 음성 (real로 판정되어야 함)")
     p.add_argument("--threshold", type=float, default=DEFAULT_THRESHOLD)
+    p.add_argument("--model", default=None,
+                   help="다른 사전학습 탐지기로 교체해 비교한다 (HF 모델 id)")
     p.add_argument("-o", "--out", default=None)
     args = p.parse_args()
 
     from protect import load_wav
 
-    det = DeepvoiceDetector(threshold=args.threshold)
+    det = (DeepvoiceDetector(model_name=args.model, threshold=args.threshold)
+           if args.model else DeepvoiceDetector(threshold=args.threshold))
     print(f"모델: {det.model_name}")
     print(f"임계값: {args.threshold} (이상이면 '딥보이스 의심')\n")
 
@@ -82,7 +85,11 @@ def main() -> int:
         correct = sum(1 for r in rows if r["correct"])
         rate = correct / len(rows)
         metric = "재현율" if expect_fake else "정상 판정률"
-        print(f"  → {metric} {correct}/{len(rows)} = {rate * 100:.1f}%\n")
+        # 표본이 적으므로 점 추정만 쓰면 안 된다. 16개에서 3/16이면 [6.6%, 43.0%]다.
+        from mirinae.metrics import wilson_ci
+        lo, hi = wilson_ci(correct, len(rows))
+        print(f"  → {metric} {correct}/{len(rows)} = {rate * 100:.1f}% "
+              f"[{lo * 100:.1f}, {hi * 100:.1f}]\n")
         results[group] = rows
 
     # ── 판정 ──────────────────────────────────────────────────────────────────

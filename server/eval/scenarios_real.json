@@ -1,0 +1,305 @@
+{
+  "meta": {
+    "version": "0.1.0",
+    "purpose": "외부 공개 자료로만 만든 교차검증 세트 — 사기 발화는 언론·판결·기관 공개 인용문에서 그대로 가져왔다",
+    "why": "D08 §07은 패턴 DB 작성자와 평가 시나리오 작성자를 분리하라고 요구한다. `scenarios.json`은 그 분리를 완전히 만족하지 못한다(작성자가 DB의 benign·critical을 이미 본 상태였다). 이 파일은 **사기 발화를 한 줄도 짓지 않는 것**으로 그 문제를 우회한다. 전부 공개된 인용문이고, 출처를 발화 단위로 붙였다.",
+    "method": "각 발화의 `quote: true`는 출처에 실린 문장을 그대로 옮긴 것이다. `quote: false`는 대화가 이어지도록 넣은 최소한의 연결구이며, 위험 키워드를 포함하지 않도록 썼다. 연결구에 키워드를 넣으면 '내가 넣은 것을 내가 찾는' 순환이 된다.",
+    "benign_note": "정상 시나리오(tag: family)는 공개 전사가 존재하지 않는 영역이라 직접 작성했다. 다만 pattern_db를 참조하지 않고, '가족끼리 실제로 하는 돈 이야기'만으로 구성했다. 오탐은 실사용을 막는 가장 큰 요인이므로 이쪽이 이 세트의 절반이다.",
+    "contamination_warning": "**이 세트의 사기 탐지율은 더 이상 완전히 독립적이지 않다.** 최초 측정에서 탐지율 60%가 나왔고, 미탐 2건의 원인이 DB 공백(S4 물리적 고립 유도 · S5 대면편취 표현)임을 확인해 그 5항을 pattern_db에 추가했다. 추가 근거는 이 세트의 출처와 같은 공개 자료이므로 D08 §07이 요구한 '외부 자료로 DB를 채운다'는 취지에는 맞지만, 채운 뒤 같은 세트로 다시 재면 그 수치는 상한이다. 추가 후 80%. **진짜 성능을 확인하려면 아직 쓰지 않은 공개 녹취가 더 필요하다.** 정상(family) 쪽은 DB 변경의 영향을 받지 않았고 추가 전후 모두 오탐 0건이라 오염이 없다.",
+    "measurement_log": [
+      {"when": "DB 추가 전", "recall": 0.60, "fpr": 0.0, "missed": ["R-A-02", "R-A-03"]},
+      {"when": "DB 추가 후", "recall": 0.80, "fpr": 0.0, "missed": ["R-A-02"]}
+    ],
+    "external_sources": [
+      {
+        "id": "CCTODAY-2206442",
+        "title": "범죄 수사를 빙자한 검찰 사칭 보이스피싱 주의보!",
+        "url": "https://www.cctoday.co.kr/news/articleView.html?idxno=2206442",
+        "used_for": "R-A-01 — 카드 배달원 → 카드사 상담원 → 검사 3단 릴레이 실제 사건"
+      },
+      {
+        "id": "SBS-N1008502009",
+        "title": "버젓이 '계좌번호 말씀 말라'…사기범 실제 목소리 공개",
+        "url": "https://news.sbs.co.kr/news/endPage.do?news_id=N1008502009",
+        "used_for": "R-A-02 — 예방 문구를 흉내내는 실제 녹취"
+      },
+      {
+        "id": "SCOURT-EMBEZZLE",
+        "title": "보이스피싱 범죄에 있어 전기통신금융사기죄와 사기죄의 관계 (대법원 자료)",
+        "url": "https://file.scourt.go.kr/dcboard/1761004739910_085859.pdf",
+        "used_for": "R-C-01 — '기존 대출금을 현금으로 상환하여야 한다' 기망 문구"
+      },
+      {
+        "id": "CREFIA",
+        "title": "여신금융협회 불법금융 피해예방 및 대처방안",
+        "url": "https://customer.crefia.or.kr/common/forward.xx?url=/customer/guard/guardPlan1",
+        "used_for": "R-C-01 — 정부지원 저금리 대환 미끼 문구"
+      },
+      {
+        "id": "BOANNEWS-95566",
+        "title": "\"엄마, 나 폰 고장 나서...\" 문자 받았다면 100% 피싱 사기 의심하라",
+        "url": "https://m.boannews.com/html/detail.html?idx=95566",
+        "used_for": "R-B-01 — 자녀 사칭 메신저피싱 전형 문구"
+      },
+      {
+        "id": "BOANNEWS-84349",
+        "title": "보이스피싱 범죄, 최다 피해유형 5가지와 각각의 대처법",
+        "url": "https://m.boannews.com/html/detail.html?idx=84349",
+        "used_for": "R-A-03 — '대포통장이 발견돼 … 대출을 받아 금감원 직원에게 전달하라'"
+      }
+    ]
+  },
+
+  "scenarios": [
+    {
+      "id": "R-A-01",
+      "label": "fraud",
+      "tag": "real",
+      "title": "실제 사건 — 카드 배달원→카드사→검사 3단 릴레이",
+      "source": "CCTODAY-2206442",
+      "route_expected": "A",
+      "expect": "위험",
+      "alert_by": 6,
+      "note": "이 사건은 '안전계좌'를 쓰지 않는다. '자산 보호 신청'과 '현금 전달'이다. DB가 그 표현들을 갖고 있는지 그대로 시험한다.",
+      "utterances": [
+        {"t": 0.0,   "speaker": "remote", "quote": true,  "text": "카드가 집으로 배달됩니다."},
+        {"t": 12.0,  "speaker": "remote", "quote": true,  "text": "신용카드는 처리하겠습니다. 그런데 S 은행에 개설된 선생님 명의의 통장이 이상합니다. 금융감독원에 전화해 확인해보세요."},
+        {"t": 32.0,  "speaker": "remote", "quote": false, "text": "네, 접수되었습니다. 담당자 연결해 드리겠습니다."},
+        {"t": 48.0,  "speaker": "remote", "quote": true,  "text": "비공개 수사이니 다른 사람에게 절대로 말하지 마십시오."},
+        {"t": 62.0,  "speaker": "remote", "quote": true,  "text": "만약에 발설하면 구속수사로 전환될 수 있습니다."},
+        {"t": 78.0,  "speaker": "remote", "quote": true,  "text": "피의자가 아니라는 사실을 입증하고, 계좌에 있는 돈을 안전하게 관리하기 위해 자산 보호 신청을 해야 합니다."},
+        {"t": 98.0,  "speaker": "remote", "quote": true,  "text": "현금을 찾아 내가 보내는 금융감독원 직원에게 전달하십시오."},
+        {"t": 116.0, "speaker": "remote", "quote": true,  "text": "현금은 내일 아침에 돌려주겠습니다."}
+      ]
+    },
+    {
+      "id": "R-A-02",
+      "label": "fraud",
+      "tag": "real",
+      "title": "실제 녹취 — 예방 문구를 흉내내는 사기범",
+      "source": "SBS-N1008502009",
+      "route_expected": "A",
+      "expect": "위험",
+      "alert_by": 6,
+      "note": "공개된 실제 목소리. 사기범이 예방 문구를 먼저 말해 신뢰를 얻는다. benign 감점이 회피에 쓰이는지 실제 발화로 확인한다.",
+      "utterances": [
+        {"t": 0.0,  "speaker": "remote", "quote": false, "text": "안녕하세요, 확인할 것이 있어 연락드렸습니다."},
+        {"t": 10.0, "speaker": "remote", "quote": true,  "text": "개인정보보호법에 의거하여 주민등록번호, 계좌번호, 통장 비밀번호 절대로 말씀하시면 안 되시고요."},
+        {"t": 26.0, "speaker": "remote", "quote": true,  "text": "정규직이십니까? 4대 보험 적용되십니까? 그래서 연봉은 대충 뭐 근사치로 얼마나 된다 그것만 저희가 절차상 물어보는 거라서."},
+        {"t": 46.0, "speaker": "remote", "quote": true,  "text": "조용한 공간을, 독립적인 공간으로 가셔서 통화 안 되십니까?"},
+        {"t": 62.0, "speaker": "remote", "quote": true,  "text": "본인 자산까지 피해를 입었을 경우에는 국가에서 보상해 주는 제도가 있습니다. 이거 신청해 드릴까요?"},
+        {"t": 82.0, "speaker": "remote", "quote": false, "text": "그럼 절차대로 진행하겠습니다. 지금 알려드리는 곳으로 옮겨 두시면 됩니다."}
+      ]
+    },
+    {
+      "id": "R-A-03",
+      "label": "fraud",
+      "tag": "real",
+      "title": "실제 유형 — 대포통장 빌미로 대출받아 전달",
+      "source": "BOANNEWS-84349",
+      "route_expected": "A",
+      "expect": "위험",
+      "alert_by": 4,
+      "utterances": [
+        {"t": 0.0,  "speaker": "remote", "quote": false, "text": "확인차 연락드렸습니다."},
+        {"t": 10.0, "speaker": "remote", "quote": true,  "text": "개인정보가 유출됐습니다."},
+        {"t": 22.0, "speaker": "remote", "quote": true,  "text": "대포통장이 발견돼 금융정보 유출이 우려됩니다."},
+        {"t": 38.0, "speaker": "remote", "quote": true,  "text": "대출을 받아 금감원 직원에게 전달하십시오."}
+      ]
+    },
+    {
+      "id": "R-B-01",
+      "label": "fraud",
+      "tag": "real",
+      "title": "실제 유형 — 자녀 사칭 메신저피싱",
+      "source": "BOANNEWS-95566",
+      "route_expected": "B",
+      "expect": "위험",
+      "alert_by": 4,
+      "utterances": [
+        {"t": 0.0,  "speaker": "remote", "quote": true,  "text": "엄마, 나 폰 고장 나서 친구 폰으로 연락해."},
+        {"t": 12.0, "speaker": "remote", "quote": true,  "text": "스마트폰 액정이 고장나서 수리를 맡겼어."},
+        {"t": 26.0, "speaker": "remote", "quote": true,  "text": "급하게 결제할 일이 생겼는데 인증서 오류 때문에 이체가 안 돼."},
+        {"t": 44.0, "speaker": "remote", "quote": false, "text": "지금 알려주는 곳으로 대신 좀 넣어줘."}
+      ]
+    },
+    {
+      "id": "R-C-01",
+      "label": "fraud",
+      "tag": "real",
+      "title": "실제 유형 — 정부지원 저금리 대환 미끼",
+      "source": "CREFIA · SCOURT-EMBEZZLE",
+      "route_expected": "C",
+      "expect": "위험",
+      "alert_by": 4,
+      "utterances": [
+        {"t": 0.0,  "speaker": "remote", "quote": false, "text": "안녕하세요, 대출 상담 안내드립니다."},
+        {"t": 10.0, "speaker": "remote", "quote": true,  "text": "기존 대출금을 햇살론 등 저금리의 정부지원 자금으로 대환해 드리겠습니다."},
+        {"t": 28.0, "speaker": "remote", "quote": true,  "text": "기존 대출금을 현금으로 상환하여야 합니다."},
+        {"t": 44.0, "speaker": "remote", "quote": true,  "text": "지정해 드리는 계좌로 입금해 주십시오."},
+        {"t": 58.0, "speaker": "remote", "quote": true,  "text": "대출 수수료가 필요합니다."}
+      ]
+    },
+
+    {
+      "id": "FAM-01",
+      "label": "benign",
+      "tag": "family",
+      "title": "자녀 → 부모 · 등록금이 모자란다",
+      "expect": "안전",
+      "utterances": [
+        {"t": 0.0,  "speaker": "remote", "text": "엄마 나야. 지금 통화 괜찮아?"},
+        {"t": 10.0, "speaker": "remote", "text": "이번 학기 등록금이 생각보다 많이 나왔더라고."},
+        {"t": 24.0, "speaker": "remote", "text": "장학금 받은 거 빼고 사십만원 정도가 비는데."},
+        {"t": 40.0, "speaker": "remote", "text": "혹시 다음 주까지 내 계좌로 보내줄 수 있어? 안 되면 학교에 분납 신청할게."}
+      ]
+    },
+    {
+      "id": "FAM-02",
+      "label": "benign",
+      "tag": "family",
+      "title": "부부 · 이번 달 카드값과 생활비",
+      "expect": "안전",
+      "utterances": [
+        {"t": 0.0,  "speaker": "remote", "text": "여보, 이번 달 카드값 나왔는데 좀 많이 나왔어."},
+        {"t": 14.0, "speaker": "remote", "text": "결제일이 25일이니까 그 전에 생활비 통장으로 옮겨 놔야 할 것 같아."},
+        {"t": 32.0, "speaker": "remote", "text": "내 월급 들어오면 바로 이체할게."},
+        {"t": 46.0, "speaker": "remote", "text": "그리고 관리비도 자동이체 걸어놨는지 확인 좀 해줘."}
+      ]
+    },
+    {
+      "id": "FAM-03",
+      "label": "benign",
+      "tag": "family",
+      "title": "형제 · 부모님 병원비 분담",
+      "note": "'급하게', '오늘', '계좌', '송금'이 전부 정당하게 나온다.",
+      "expect": "안전",
+      "utterances": [
+        {"t": 0.0,  "speaker": "remote", "text": "형, 아버지 입원비 정산해야 한대."},
+        {"t": 14.0, "speaker": "remote", "text": "총 이백삼십만원인데 반반씩 하면 될까?"},
+        {"t": 30.0, "speaker": "remote", "text": "병원에서 오늘 중으로 처리해 달라고 해서 좀 급해."},
+        {"t": 46.0, "speaker": "remote", "text": "내 계좌로 보내주면 내가 한꺼번에 결제할게."}
+      ]
+    },
+    {
+      "id": "FAM-04",
+      "label": "benign",
+      "tag": "family",
+      "title": "자녀가 부모 대신 은행 업무를 봐주는 통화",
+      "expect": "안전",
+      "utterances": [
+        {"t": 0.0,  "speaker": "remote", "text": "엄마, 통장 정리하러 은행 갔는데."},
+        {"t": 12.0, "speaker": "remote", "text": "적금 만기가 지났다고 해서 재예치할지 물어보네."},
+        {"t": 28.0, "speaker": "remote", "text": "금리가 좀 내려가긴 했는데 그냥 다시 넣을까?"},
+        {"t": 44.0, "speaker": "remote", "text": "아니면 엄마 계좌로 이체해 둘게. 천천히 생각해보고 알려줘."}
+      ]
+    },
+    {
+      "id": "FAM-05",
+      "label": "benign",
+      "tag": "family",
+      "title": "부모 → 자녀 · 전세 계약금 도와주기",
+      "expect": "안전",
+      "utterances": [
+        {"t": 0.0,  "speaker": "remote", "text": "집 계약한다고 했지? 계약금은 준비됐니?"},
+        {"t": 14.0, "speaker": "remote", "text": "모자라면 아빠가 좀 보태줄게."},
+        {"t": 28.0, "speaker": "remote", "text": "계좌번호 문자로 보내주면 내일 오전에 이체할게."},
+        {"t": 44.0, "speaker": "remote", "text": "계약서는 꼭 등기부등본 확인하고 쓰고."}
+      ]
+    },
+    {
+      "id": "FAM-06",
+      "label": "benign",
+      "tag": "family",
+      "title": "명절 · 제사비와 세뱃돈 정산",
+      "expect": "안전",
+      "utterances": [
+        {"t": 0.0,  "speaker": "remote", "text": "누나, 이번 제사 비용 얼마나 들었어?"},
+        {"t": 14.0, "speaker": "remote", "text": "장 본 거랑 다 합쳐서 오십만원 정도?"},
+        {"t": 28.0, "speaker": "remote", "text": "그럼 내가 절반 보낼게. 계좌 그대로지?"},
+        {"t": 42.0, "speaker": "remote", "text": "애들 세뱃돈은 각자 주는 걸로 하자."}
+      ]
+    },
+    {
+      "id": "FAM-07",
+      "label": "benign",
+      "tag": "family",
+      "title": "자녀 → 부모 · 보이스피싱 조심하라고 당부",
+      "note": "예방 당부. 위험 표현이 인용문으로 등장한다.",
+      "expect": "안전",
+      "utterances": [
+        {"t": 0.0,  "speaker": "remote", "text": "엄마, 요즘 검찰이라고 전화 오는 거 많대."},
+        {"t": 16.0, "speaker": "remote", "text": "계좌가 범죄에 연루됐다고 하면서 돈 옮기라고 한다더라."},
+        {"t": 34.0, "speaker": "remote", "text": "그런 전화 오면 그냥 끊고 나한테 바로 전화해."},
+        {"t": 50.0, "speaker": "remote", "text": "은행이든 검찰이든 전화로 돈 옮기라는 건 다 사기야."}
+      ]
+    },
+    {
+      "id": "FAM-08",
+      "label": "benign",
+      "tag": "family",
+      "title": "부부 · 대출 갈아타기 상의",
+      "note": "'대환', '금리', '상환'이 정당하게 나온다. R-C-01과 어휘가 겹친다.",
+      "expect": "안전",
+      "utterances": [
+        {"t": 0.0,  "speaker": "remote", "text": "주택담보대출 금리가 많이 올랐더라고."},
+        {"t": 16.0, "speaker": "remote", "text": "은행 가서 대환 상담 한번 받아볼까 하는데."},
+        {"t": 32.0, "speaker": "remote", "text": "중도상환 수수료가 얼마인지도 물어봐야겠어."},
+        {"t": 48.0, "speaker": "remote", "text": "이번 주말에 같이 영업점 가자."}
+      ]
+    },
+    {
+      "id": "FAM-09",
+      "label": "benign",
+      "tag": "family",
+      "title": "자녀 → 부모 · 용돈 보냈다는 통화",
+      "expect": "안전",
+      "utterances": [
+        {"t": 0.0,  "speaker": "remote", "text": "엄마, 방금 용돈 보냈어. 확인해봐."},
+        {"t": 14.0, "speaker": "remote", "text": "이번 달은 좀 여유가 있어서 조금 더 넣었어."},
+        {"t": 28.0, "speaker": "remote", "text": "병원 가실 때 택시 타고 가시고."},
+        {"t": 42.0, "speaker": "remote", "text": "다음 주에 내려갈게."}
+      ]
+    },
+    {
+      "id": "FAM-10",
+      "label": "benign",
+      "tag": "family",
+      "title": "부모 → 자녀 · 상속·증여 이야기",
+      "expect": "안전",
+      "utterances": [
+        {"t": 0.0,  "speaker": "remote", "text": "얘기 나온 김에 하나 말해둘게."},
+        {"t": 14.0, "speaker": "remote", "text": "나중에 정리할 때 세금 문제가 복잡하다고 하더라."},
+        {"t": 32.0, "speaker": "remote", "text": "미리 증여하는 게 나을 수도 있다는데 세무사한테 물어봐야겠어."},
+        {"t": 52.0, "speaker": "remote", "text": "급한 건 아니니까 천천히 알아보자."}
+      ]
+    },
+    {
+      "id": "FAM-11",
+      "label": "benign",
+      "tag": "family",
+      "title": "형제 · 사업 자금을 빌려달라는 진짜 부탁",
+      "note": "가장 어려운 케이스. R-B-01(지인 사칭)과 표면 구조가 거의 같다.",
+      "expect": "안전",
+      "utterances": [
+        {"t": 0.0,  "speaker": "remote", "text": "형, 나 요즘 가게가 좀 힘들어."},
+        {"t": 16.0, "speaker": "remote", "text": "재료값 결제가 밀려서 이번 달만 좀 버티면 되는데."},
+        {"t": 34.0, "speaker": "remote", "text": "혹시 삼백만원만 빌려줄 수 있을까? 다음 달에 갚을게."},
+        {"t": 54.0, "speaker": "remote", "text": "부담되면 말해. 다른 데 알아볼게."}
+      ]
+    },
+    {
+      "id": "FAM-12",
+      "label": "benign",
+      "tag": "family",
+      "title": "부모 · 연금 수령 계좌 변경 상의",
+      "expect": "안전",
+      "utterances": [
+        {"t": 0.0,  "speaker": "remote", "text": "국민연금 들어오는 계좌를 바꾸려고 하는데."},
+        {"t": 16.0, "speaker": "remote", "text": "지금 쓰는 통장이 오래돼서 새로 만든 걸로 하고 싶어."},
+        {"t": 34.0, "speaker": "remote", "text": "공단에 직접 가야 한다더라. 아니면 앱으로도 된대."},
+        {"t": 52.0, "speaker": "remote", "text": "네가 시간 될 때 같이 좀 봐줘."}
+      ]
+    }
+  ]
+}

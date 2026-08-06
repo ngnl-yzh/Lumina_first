@@ -324,6 +324,13 @@ h1.page {
   margin-top: 6px;
 }
 
+/* 점수에 반영되지 않은 근거. 발동 규칙과 시각적으로 구별되어야 한다 —
+   같은 톤으로 나열하면 "이것도 위험 신호"로 잘못 읽힌다. */
+.evidence-drop {
+  opacity: 0.72;
+  font-style: italic;
+}
+
 /* 개입 오버레이 */
 .intervene {
   position: fixed;

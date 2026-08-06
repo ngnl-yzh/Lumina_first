@@ -17,20 +17,51 @@ const REPEAT_FIRST = 2; // 첫 문장(인용)은 두 번 읽는다
 
 let voice: SpeechSynthesisVoice | null = null;
 
+/**
+ * 한국어 음성만 쓴다. 없으면 **아무것도 재생하지 않는다.**
+ *
+ * 예전에는 `voices.find(ko) ?? voices[0]`이었다. 한국어 음성이 없는 기기에서
+ * 영어 엔진이 "안전계좌는 존재하지 않습니다"를 읽는다는 뜻이다.
+ * 고령층에게는 무음보다 나쁘다 — 소리는 나는데 알아들을 수 없으니
+ * "뭔가 잘못됐다"는 인상만 남고 정작 경고 내용은 전달되지 않는다.
+ * 화면 경고는 그대로 뜨므로, 잘못 읽느니 화면에 맡기는 편이 낫다.
+ */
 function pickKoreanVoice(): SpeechSynthesisVoice | null {
   if (voice) return voice;
   const voices = window.speechSynthesis?.getVoices?.() ?? [];
-  voice = voices.find((v) => v.lang?.startsWith("ko")) ?? voices[0] ?? null;
+  voice = voices.find((v) => v.lang?.toLowerCase().startsWith("ko")) ?? null;
   return voice;
+}
+
+/**
+ * Chrome은 `getVoices()`가 처음 호출에서 빈 배열을 준다 — 목록이 비동기로 로드된다.
+ * 경고가 뜨는 순간이 하필 그때면 음성이 안 나온다.
+ * 앱 시작 시 한 번 걸어두고, 목록이 채워지면 다시 고른다.
+ */
+export function warmUpVoices(): void {
+  if (!ttsAvailable()) return;
+  window.speechSynthesis.getVoices();
+  window.speechSynthesis.addEventListener?.("voiceschanged", () => {
+    voice = null;
+    pickKoreanVoice();
+  });
 }
 
 export function ttsAvailable(): boolean {
   return typeof window !== "undefined" && "speechSynthesis" in window;
 }
 
+/** 한국어 음성이 실제로 있는가. 없으면 화면 경고만으로 동작한다. */
+export function koreanVoiceAvailable(): boolean {
+  return ttsAvailable() && pickKoreanVoice() !== null;
+}
+
 /** 경고 문장들을 순서대로 읽는다. */
 export function speakWarning(lines: string[]): void {
   if (!ttsAvailable()) return;
+  // 한국어 음성이 없으면 재생하지 않는다 — 영어 엔진이 한글을 읽는 것보다 낫다.
+  const v = pickKoreanVoice();
+  if (!v) return;
 
   const synth = window.speechSynthesis;
   synth.cancel(); // 이전 재생이 남아 있으면 겹친다
@@ -47,8 +78,7 @@ export function speakWarning(lines: string[]): void {
     u.lang = "ko-KR";
     u.rate = RATE;
     u.pitch = 1.0;
-    const v = pickKoreanVoice();
-    if (v) u.voice = v;
+    u.voice = v;
     synth.speak(u);
   }
 }

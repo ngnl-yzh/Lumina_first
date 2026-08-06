@@ -11,6 +11,8 @@ interface Utterance {
   score: number;
   criticals: string[];
   pairs: string[];
+  /** 인용으로 판단해 점수에서 뺀 표현. 왜 안 올렸는지를 보여주기 위해 받는다. */
+  suppressed: string[];
   latencyMs: number;
 }
 
@@ -92,6 +94,7 @@ export default function Mode1({
             score: msg.score,
             criticals: msg.criticals ?? [],
             pairs: msg.pairs ?? [],
+            suppressed: Object.values(msg.suppressed ?? {}).flat(),
             latencyMs: latency,
           },
         ]);
@@ -378,6 +381,13 @@ export default function Mode1({
                     {(u.criticals.length > 0 || u.pairs.length > 0) && (
                       <div className="evidence">
                         발동 규칙: {[...u.criticals, ...u.pairs].join(", ")}
+                      </div>
+                    )}
+                    {/* 왜 안 올렸는지도 보여준다. 올린 이유만 설명하면
+                        "안 올린 판단"은 검증할 방법이 없다. */}
+                    {u.suppressed.length > 0 && (
+                      <div className="evidence evidence-drop">
+                        인용으로 판단해 제외: {u.suppressed.join(", ")}
                       </div>
                     )}
                   </div>

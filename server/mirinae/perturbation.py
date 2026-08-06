@@ -177,9 +177,28 @@ def pgd_perturbation(
     thr_mag, _ = model.threshold(x)
     mask = vad_mask if vad_mask is not None else speech_mask(x)
 
-    # 기준 임베딩 — 최적화 내내 고정이므로 한 번만 계산한다
+    def heard(w: torch.Tensor) -> torch.Tensor:
+        """상대방이 실제로 듣게 될 신호.
+
+        통화 채널의 지배적인 성분은 **대역 제한**이다 —
+        `codec_test.py` 실측에서 대역 제한만으로 이미 방어가 무너졌고
+        8 kHz 리샘플과 G.711 양자화는 그 위에 거의 아무것도 더하지 않았다
+        (SRS 0.8420 → 0.8405 → 0.8346).
+
+        그래서 미분 가능한 대역 제한 하나로 채널을 근사한다.
+        μ-law 양자화는 미분이 안 되고, 실측상 기여도 작아 루프에 넣지 않는다.
+        최종 검증은 `codec_test.py`가 **진짜 코덱**으로 한다 — 근사로 최적화하고
+        근사로 검증하면 아무것도 증명하지 못한다.
+        """
+        if not cfg.channel_aware:
+            return w
+        return band_limit(w, cfg.band_low_hz, cfg.band_high_hz)
+
+    # 기준 임베딩 — 최적화 내내 고정이므로 한 번만 계산한다.
+    # channel_aware면 **채널을 통과한 원본**이 기준이 된다. 이게 핵심이다 —
+    # 전대역 원본에서 멀어져 봐야 상대는 채널 통과본을 듣는다.
     with torch.no_grad():
-        refs = [e.detach() for e in encoders.embeddings(x)]
+        refs = [e.detach() for e in encoders.embeddings(heard(x))]
 
     # 결함 ③ 수정 — 정류점(δ=0)에서 출발하지 않는다.
     # 난수는 CPU에서 뽑아 장비가 바뀌어도 같은 결과가 나오게 한다.
@@ -192,7 +211,7 @@ def pgd_perturbation(
     trace: list[float] = []
 
     for step in range(cfg.steps):
-        embeds = encoders.embeddings(x + delta)
+        embeds = encoders.embeddings(heard(x + delta))
 
         # untargeted — 원본에서 멀어지기만 하면 된다. 타깃 화자가 필요 없어
         # 구현이 단순하고 이중 용도 우려도 낮다.
@@ -214,8 +233,8 @@ def pgd_perturbation(
 
         if trace_every and (step % trace_every == 0 or step == cfg.steps - 1):
             with torch.no_grad():
-                trace.append(float(cosine_similarity(encoders.embeddings(x + delta)[0],
-                                                     refs[0])))
+                trace.append(float(cosine_similarity(
+                    encoders.embeddings(heard(x + delta))[0], refs[0])))
 
     with torch.no_grad():
         delta_final = delta.detach()
@@ -223,10 +242,12 @@ def pgd_perturbation(
             delta_final = enforce_masking_bound(delta_final, thr_mag,
                                                 cfg.masking_ratio, model)
         protected = x + delta_final
+        # 보고되는 SRS도 채널을 통과한 기준으로 잰다. 최적화 목표와 보고 지표가
+        # 다르면 "무엇을 달성했는지"가 흐려진다.
         per_enc = {
             name: float(cosine_similarity(emb, ref))
             for name, emb, ref in zip(encoders.names,
-                                      encoders.embeddings(protected), refs)
+                                      encoders.embeddings(heard(protected)), refs)
         }
         srs_initial = 1.0     # 무섭동 기준선. 원본 대 원본이므로 정의상 1 (C-C 대조군이 확인)
         snr = snr_db(x, delta_final)

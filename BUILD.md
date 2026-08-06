@@ -47,6 +47,21 @@ Whisper small(460 MB)과 딥보이스 탐지기(380 MB)는 EXE에 넣지 않는�
 현장에서 인터넷이 안 되면 모델을 못 받아 아무것도 안 된다.
 이건 실제로 자주 나는 사고다.
 
+## 경고 음성 뱅크도 같은 취급이다
+
+```bash
+cd server
+.venv\Scripts\python build_tts_bank.py --list-voices   # ko-KR 음성 확인
+.venv\Scripts\python build_tts_bank.py                 # 조각 91개 · 약 10 MB
+```
+
+WAV는 저장소에 넣지 않는다(재생성 가능하고 크다). `manifest.json`만 커밋한다.
+
+**한국어 음성(예: Microsoft Heami)이 설치돼 있어야 한다.**
+없으면 뱅크가 안 만들어지고, 앱은 화면 경고만으로 동작한다 —
+한국어 음성이 없는 기기에서 영어 엔진이 한글을 읽는 것보다 그게 낫다고 판단해
+그렇게 고쳐 두었다. 소리는 나는데 알아들을 수 없으면 고령층에게는 무음보다 나쁘다.
+
 ## 빌드하면서 걸린 것
 
 ### excludes를 추측으로 짜지 말 것

@@ -176,6 +176,9 @@ async def handle_mode1(ws, svc: Services) -> None:
                 "criticals": result.criticals,
                 "pairs": result.pairs,
                 "benign": result.benign_hits,
+                # 인용으로 판단해 점수에서 뺀 표현. 화면에 "왜 안 올렸는가"를 보이려면 필요하다 —
+                # 근거 패널이 올린 이유만 설명하면 안 올린 판단은 검증할 수 없다.
+                "suppressed": result.suppressed,
                 "deepvoice": dv,
             }, ensure_ascii=False))
 

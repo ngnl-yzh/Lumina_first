@@ -1,7 +1,18 @@
 .venv/
+.venv-xtts/
 __pycache__/
 *.pyc
 .pytest_cache/
+build/
+dist/
+
+# 실험 산출물 — 재생성 가능하고 크다
 out/
 sweep_result.json
 *.wav
+
+# 경고 음성 뱅크 — WAV는 위 *.wav 규칙으로 이미 제외된다.
+# manifest.json은 **커밋한다.** 오디오 없이도 조각 완결성을 검증할 수 있어야 하고,
+# 테스트가 그 목록을 근거로 회귀를 막는다. 생성은 `python build_tts_bank.py`.
+tts_bank/_index.json
+tts_bank/_build.ps1

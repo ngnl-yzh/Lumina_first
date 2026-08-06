@@ -1,0 +1,137 @@
+{
+  "meta": {
+    "version": "0.1.0",
+    "purpose": "회피 평가 — 탐지 로직을 알고 있는 사기범이 빠져나갈 수 있는가",
+    "why": "억제 장치는 전부 양날이다. 정상 통화를 살리려고 넣은 규칙이 사기범에게는 회피 수단이 된다. 규칙을 넣은 사람이 직접 그 규칙을 공격해봐야 한다. 여기 있는 시나리오는 전부 label이 fraud이며 **반드시 탐지되어야 한다.**",
+    "threat_model": "사기범이 미리내의 판정 규칙을 안다고 가정한다. 조직적 보이스피싱은 대본을 계속 고치고, 통신사 탐지를 우회한 전례가 있으므로 과한 가정이 아니다. 다만 '규칙을 정확히 안다'는 최악 가정이며, 실제로는 이보다 약할 것이다.",
+    "realism_note": "회피 발화는 실제로 쓰일 법한 것만 넣었다. 문법적으로 가능하지만 사람이 쓰지 않을 문장으로 시스템을 깨는 것은 의미가 없다. E-01의 '상부 지시' 화법과 E-02의 예방 문구 도배는 SBS 공개 녹취에서 확인된 실제 수법의 연장이다.",
+    "external_sources": [
+      {
+        "id": "SBS-N1008502009",
+        "title": "버젓이 '계좌번호 말씀 말라'…사기범 실제 목소리 공개",
+        "url": "https://news.sbs.co.kr/news/endPage.do?news_id=N1008502009",
+        "used_for": "E-02 — 사기범이 예방 문구를 실제로 말한다는 근거"
+      }
+    ]
+  },
+
+  "scenarios": [
+    {
+      "id": "F-E-01",
+      "label": "fraud",
+      "tag": "evasion",
+      "title": "회피① 인용 어미로 지시를 감춘다",
+      "attacks": "context.py의 인용 억제",
+      "route_expected": "A",
+      "expect": "위험",
+      "alert_by": 4,
+      "note": "'제가 시킨다'가 아니라 '윗선이 시켰다'로 말한다. 권위를 빌리는 화법이라 사기범에게 오히려 자연스럽고, 인용 어미가 문장마다 붙는다.",
+      "utterances": [
+        {"t": 0.0,  "speaker": "remote", "text": "서울중앙지검 수사관입니다."},
+        {"t": 8.0,  "speaker": "remote", "text": "담당 검사님이 선생님 계좌가 자금세탁에 연루됐다고 하십니다."},
+        {"t": 20.0, "speaker": "remote", "text": "수사 기밀이라 가족에게도 알리지 말라고 하셨습니다."},
+        {"t": 33.0, "speaker": "remote", "text": "검사님이 안전계좌로 자금을 옮기라고 하십니다."},
+        {"t": 45.0, "speaker": "remote", "text": "지금 바로 이체해 주십시오."}
+      ]
+    },
+    {
+      "id": "F-E-02",
+      "label": "fraud",
+      "tag": "evasion",
+      "title": "회피② 예방 문구를 도배해 감점을 쌓는다",
+      "attacks": "scorer.py의 benign 감점과 CRITICAL_FLOOR",
+      "route_expected": "A",
+      "expect": "위험",
+      "alert_by": 5,
+      "note": "SBS 녹취에서 사기범이 실제로 예방 문구를 말했다. benign 지시어를 여러 개 흘리면 감점이 누적되고, 하한까지 감점을 받게 고친 뒤로는 하한도 함께 내려간다.",
+      "utterances": [
+        {"t": 0.0,  "speaker": "remote", "text": "금융감독원입니다. 요즘 보이스피싱 조심하셔야 합니다."},
+        {"t": 12.0, "speaker": "remote", "text": "저희는 절대 알려주지 마시라고 안내드립니다. 비밀번호는 누구에게도 말씀하지 마세요."},
+        {"t": 26.0, "speaker": "remote", "text": "의심되시면 112에 신고하셔도 되고 1332로 확인하셔도 됩니다."},
+        {"t": 40.0, "speaker": "remote", "text": "본인 확인 절차 먼저 진행하겠습니다. 천천히 생각하시고 답변 주세요."},
+        {"t": 55.0, "speaker": "remote", "text": "확인 결과 명의도용이 확인되어 안전계좌로 이체가 필요합니다."},
+        {"t": 70.0, "speaker": "remote", "text": "가족에게도 말하지 마시고 지금 진행해 주십시오."}
+      ]
+    },
+    {
+      "id": "F-E-03",
+      "label": "fraud",
+      "tag": "evasion",
+      "title": "회피③ 조건절로 감싼다",
+      "attacks": "인용·조건 표현에 기댄 억제 전반",
+      "route_expected": "A",
+      "expect": "위험",
+      "alert_by": 4,
+      "utterances": [
+        {"t": 0.0,  "speaker": "remote", "text": "서울중앙지방검찰청 수사관입니다."},
+        {"t": 9.0,  "speaker": "remote", "text": "선생님 명의가 대포통장에 도용된 것으로 확인됩니다."},
+        {"t": 21.0, "speaker": "remote", "text": "자산을 지키시려면 안전계좌로 옮기시는 방법이 있습니다."},
+        {"t": 34.0, "speaker": "remote", "text": "수사 기밀이니 가족에게 알리시면 수사에 지장이 생깁니다."},
+        {"t": 47.0, "speaker": "remote", "text": "동의하시면 지금 이체 진행하겠습니다."}
+      ]
+    },
+    {
+      "id": "F-E-04",
+      "label": "fraud",
+      "tag": "evasion",
+      "title": "회피④ 키워드를 우회 표현으로 바꾼다",
+      "attacks": "pattern_db의 표현 커버리지",
+      "route_expected": "A",
+      "expect": "위험",
+      "alert_by": 5,
+      "note": "'안전계좌' 대신 '보호 예치 계좌', '체포영장' 대신 '신병 확보 절차'. DB 기반 탐지의 근본 한계를 재는 시나리오다. 이걸 놓치는 것은 알고리즘 결함이 아니라 방식의 한계다.",
+      "utterances": [
+        {"t": 0.0,  "speaker": "remote", "text": "서울중앙지검 첨단범죄수사부입니다."},
+        {"t": 9.0,  "speaker": "remote", "text": "선생님 명의 통장이 범죄 자금 흐름에 포함돼 있습니다."},
+        {"t": 22.0, "speaker": "remote", "text": "소명하지 않으시면 신병 확보 절차가 진행될 수 있습니다."},
+        {"t": 35.0, "speaker": "remote", "text": "수사상 비밀 유지가 필요하니 주변에 알리지 마십시오."},
+        {"t": 48.0, "speaker": "remote", "text": "자산 보전을 위해 국고 보호 예치 계좌로 자금을 이관하셔야 합니다."},
+        {"t": 62.0, "speaker": "remote", "text": "금일 중으로 처리하셔야 동결을 면하실 수 있습니다."}
+      ]
+    },
+    {
+      "id": "F-E-05",
+      "label": "fraud",
+      "tag": "evasion",
+      "title": "회피⑤ 짧은 발화로 잘게 쪼갠다",
+      "attacks": "문장 단위 매칭 — 표현이 문장 경계에 걸리게 만든다",
+      "route_expected": "A",
+      "expect": "위험",
+      "alert_by": 8,
+      "note": "문장 단위 매칭으로 바꾸면서 문장을 넘는 매칭이 사라졌다. 사기범이 일부러 끊어 말하면 키워드가 두 발화에 걸친다.",
+      "utterances": [
+        {"t": 0.0,  "speaker": "remote", "text": "서울중앙지검입니다."},
+        {"t": 5.0,  "speaker": "remote", "text": "선생님 계좌가요."},
+        {"t": 9.0,  "speaker": "remote", "text": "자금세탁에 연루됐습니다."},
+        {"t": 15.0, "speaker": "remote", "text": "이건 수사."},
+        {"t": 18.0, "speaker": "remote", "text": "기밀 사항입니다."},
+        {"t": 23.0, "speaker": "remote", "text": "가족에게도."},
+        {"t": 26.0, "speaker": "remote", "text": "말하지 마십시오."},
+        {"t": 31.0, "speaker": "remote", "text": "안전."},
+        {"t": 34.0, "speaker": "remote", "text": "계좌로 이체하십시오."}
+      ]
+    },
+    {
+      "id": "F-E-06",
+      "label": "fraud",
+      "tag": "evasion",
+      "title": "회피⑥ 정상 대화를 길게 섞는다",
+      "attacks": "커버리지 보너스 — 정상 발화로 희석한다",
+      "route_expected": "A",
+      "expect": "위험",
+      "alert_by": 9,
+      "note": "위험 신호 사이에 무해한 발화를 끼워 넣는다. 점수가 누적 max 방식이라 희석에는 강해야 정상이다. 이 시나리오는 그 설계가 실제로 버티는지 확인한다.",
+      "utterances": [
+        {"t": 0.0,   "speaker": "remote", "text": "안녕하세요, 통화 잠시 괜찮으실까요?"},
+        {"t": 8.0,   "speaker": "remote", "text": "날씨가 많이 풀렸네요. 식사는 하셨습니까?"},
+        {"t": 20.0,  "speaker": "remote", "text": "서울중앙지방검찰청 수사관입니다."},
+        {"t": 30.0,  "speaker": "remote", "text": "요즘 이런 연락 많이 받으시죠? 번거로우시겠습니다."},
+        {"t": 45.0,  "speaker": "remote", "text": "선생님 명의 계좌가 자금세탁 사건에 연루되었습니다."},
+        {"t": 60.0,  "speaker": "remote", "text": "잠시만요, 자료 좀 확인하겠습니다."},
+        {"t": 75.0,  "speaker": "remote", "text": "네, 확인됐습니다. 수사 기밀이니 가족에게도 말하지 마십시오."},
+        {"t": 92.0,  "speaker": "remote", "text": "많이 놀라셨을 텐데 천천히 하셔도 됩니다."},
+        {"t": 110.0, "speaker": "remote", "text": "안전계좌로 자금을 이체하시면 됩니다."}
+      ]
+    }
+  ]
+}

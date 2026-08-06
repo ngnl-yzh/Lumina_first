@@ -82,6 +82,9 @@ def build_warning(result: ScoreResult, db: PatternDB) -> WarningMessage:
             quoted = quoted or crit.text
             counters.append(COUNTER_AUTHORITY.get(cid, DEFAULT_COUNTER))
 
+    # critical의 `text`는 이미 기본 표현이라 음성 뱅크에 그대로 있다.
+    spoken = quoted
+
     if quoted is None:
         # critical이 없으면 가중치가 가장 높은 히트 단계에서 가져온다
         best = max(
@@ -91,6 +94,7 @@ def build_warning(result: ScoreResult, db: PatternDB) -> WarningMessage:
         )
         if best:
             quoted = result.matched[best][0]
+            spoken = _base_text(db, best, quoted)
 
     if not counters:
         counters = [DEFAULT_COUNTER]
@@ -104,8 +108,34 @@ def build_warning(result: ScoreResult, db: PatternDB) -> WarningMessage:
         control="지금 전화를 끊으셔도 아무 일도 생기지 않습니다.",
         cross_check=CROSS_CHECK.get(result.route.id, CROSS_CHECK["*"]),
         action="확인이 어려우면 112로 전화하세요.",
-        tts_tokens=_tts_tokens(quoted, result),
+        tts_tokens=_tts_tokens(spoken, result),
     )
+
+
+def _base_text(db: PatternDB, sid: str, form: str) -> str:
+    """매칭된 표현을 DB의 **기본 표현**으로 되돌린다 — 음성 전용.
+
+    화면과 음성을 일부러 다르게 처리한다.
+
+      화면 — 실제로 매칭된 표현 그대로. 원칙1(구체성)이 요구하는 것이다.
+      음성 — 기본 표현. 이유가 둘이다.
+
+    **① 음성 뱅크에는 기본 표현만 있다.** 변형까지 넣으면 조각이 두 배가 되고,
+    없는 조각을 요청하면 그 자리에서 소리가 안 난다 —
+    정작 경고가 필요한 순간에 조용해지는 실패다. 실측에서 5건 중 3건이 그랬다
+    ("송금"·"현금으로 찾"·"팀뷰어"가 뱅크에 없었다).
+
+    **② 변형에는 STT 오차형이 섞여 있다.** "안전개좌"는 전사 오류를 흡수하려고
+    넣은 항목이지 사기범이 실제로 한 말이 아니다. 그대로 읽으면 잘못된 발음을
+    사용자에게 들려주게 된다.
+    """
+    stage = db.stages.get(sid)
+    if not stage:
+        return form
+    for kw in stage.keywords:
+        if form in kw.all_forms():
+            return kw.text
+    return form
 
 
 def _tts_tokens(quoted: str | None, result: ScoreResult) -> list[str]:

@@ -17,7 +17,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from mirinae.chunking import overlap_add, split                      # noqa: E402
 from mirinae.config import EPS, PGDConfig, SAMPLE_RATE               # noqa: E402
-from mirinae.metrics import band_energy_ratio_db, wilson_ci          # noqa: E402
+from mirinae.metrics import (                                        # noqa: E402
+    audibility, band_energy_ratio_db, wilson_ci,
+)
 from mirinae.perturbation import (                                   # noqa: E402
     band_limit, enforce_masking_bound, normalize_snr, project_masking, snr_db,
 )
@@ -74,6 +76,103 @@ def test_masking_invariant_enforced(model):
     tol = 1e-5 * float(bound.max())
     assert bool((mag <= bound + tol).all()), (
         f"최대 초과 {float((mag - bound).max()):.3e} (허용 {tol:.3e})"
+    )
+
+
+def test_audibility_is_relative_to_the_ratio_you_pass(model):
+    """`audibility`의 기준선은 `thr × ratio`다 — **배율마다 자기 기준이 달라진다.**
+
+    이걸 모르고 배율별 초과량을 나란히 놓으면 결론이 정확히 반대가 된다.
+    배율을 키우면 기준선도 함께 올라가서 초과량이 **줄어들기** 때문이다.
+    실측(스윕): 배율 0.75에서 제약 기준 16.1 dB, 배율 10.0에서 12.4 dB.
+    그대로 읽으면 "배율을 올릴수록 덜 들린다"가 되는데 절대 기준으로는 정반대다
+    (위반 bin 0.74% → 25.4%).
+
+    D09가 마스킹 배율을 "청취 평가로 결정"하도록 열어둔 파라미터인데,
+    그 결정을 뒷받침해야 할 지표가 배율 간 비교에 쓸 수 없는 값이었다.
+    이 테스트가 그 성질을 명시적으로 못박는다.
+    """
+    x = synth_speech()
+    thr, _ = model.threshold(x)
+    delta = torch.randn_like(x) * 0.01
+
+    loose = audibility(delta, thr, 10.0, model)    # 느슨한 제약
+    strict = audibility(delta, thr, 1.0, model)    # 절대 기준
+
+    # 같은 δ인데 기준선이 다르므로 초과량이 다르게 나온다.
+    assert loose.max_excess_db < strict.max_excess_db, (
+        "배율을 키웠는데 초과량이 줄지 않았다 — 기준선이 배율을 따라가지 않는다"
+    )
+    assert loose.violation_ratio <= strict.violation_ratio
+
+    # 차이는 정확히 20·log10(ratio)다. 우연이 아니라 정의에서 나온다.
+    assert strict.max_excess_db - loose.max_excess_db == pytest.approx(
+        20.0 * math.log10(10.0), abs=1e-3
+    )
+
+
+def test_telephone_channel_preserves_length_and_band():
+    """통화 채널이 길이를 보존하고 대역 밖을 실제로 잘라내는가.
+
+    길이가 어긋나면 이후 SRS 비교가 **채널 효과가 아니라 정렬 어긋남**을 잰다.
+    조용히 틀리는 종류라 여기서 못박는다.
+    """
+    from mirinae.codec import CHANNELS, telephone_channel
+
+    x = synth_speech()
+    for key, cfg in CHANNELS.items():
+        y = telephone_channel(x, cfg)
+        assert y.shape == x.shape, f"{key}: 길이가 바뀌었다 {y.shape} != {x.shape}"
+        assert torch.isfinite(y).all(), f"{key}: NaN/Inf가 생겼다"
+
+    # 절대 수준이 아니라 **감쇠량**을 본다.
+    # 이 테스트 신호는 130 Hz 기본주파수라 가장 강한 성분(130·260 Hz)이 통과대역 아래에 있다.
+    # 필터가 정상이어도 남은 대역 밖 비율이 -20 dB 근방에 머문다 —
+    # 절대 임계값으로 단언하면 신호 탓에 실패하고, 그 실패는 필터에 대해 아무것도 말해주지 않는다.
+    before = band_energy_ratio_db(x, 300.0, 3400.0, SAMPLE_RATE)
+    after = band_energy_ratio_db(telephone_channel(x, CHANNELS["ulaw"]),
+                                 300.0, 3400.0, SAMPLE_RATE)
+    assert after < before - 15.0, (
+        f"대역 밖 에너지가 {before:.1f} → {after:.1f} dB로 거의 안 줄었다 — 필터가 안 걸렸다"
+    )
+
+
+def test_channel_aware_targets_the_channel_passed_signal():
+    """channel_aware는 **채널 통과본**을 기준으로 최적화해야 한다.
+
+    잡는 결함 — 전대역 원본을 표적으로 삼으면 통화 경로에서 방어가 무너진다.
+    실측: 무처리 SRS 0.6342가 G.711 협대역 통과 후 0.8346으로 되돌아왔다
+    (판정 임계값 0.7962 위). 섭동은 남아 있었다(잔존 101% · 구조 상관 0.989) —
+    지워진 게 아니라 표적이 틀렸던 것이다.
+
+    여기서는 두 설정이 **서로 다른 δ를 만드는지**만 확인한다.
+    실제 개선 여부는 `channel_ab.py`가 진짜 코덱으로 측정한다.
+    """
+    from mirinae.encoder import SpeakerEncoder
+    from mirinae.perturbation import pgd_perturbation
+
+    x = synth_speech()
+    enc = SpeakerEncoder()
+    off = pgd_perturbation(x, enc, PGDConfig(steps=3, channel_aware=False), seed=0)
+    on = pgd_perturbation(x, enc, PGDConfig(steps=3, channel_aware=True), seed=0)
+
+    # 같은 시드인데 목적함수가 다르므로 δ가 달라야 한다.
+    diff = float((off.delta - on.delta).abs().max())
+    assert diff > 1e-6, "channel_aware가 최적화 목표를 바꾸지 않았다"
+
+
+def test_pipeline_reports_both_audibility_scales():
+    """파이프라인 결과가 두 기준을 모두 들고 있어야 한다.
+
+    절대 기준만 "들리는가"에 답한다. 한동안 제약 기준만 보고했고,
+    배율 3.0 실측에서 위반 비율을 2.44%로 보고했는데 실제(절대 기준)는 20.30%였다.
+    """
+    from mirinae.pipeline import ProtectionResult
+
+    names = ProtectionResult.__dataclass_fields__
+    assert "audibility" in names
+    assert "audibility_abs" in names, (
+        "절대 기준 가청도가 없다 — 배율이 1보다 크면 가청도를 실제보다 좋게 보고한다"
     )
 
 
