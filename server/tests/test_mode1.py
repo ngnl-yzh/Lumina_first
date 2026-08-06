@@ -44,9 +44,9 @@ def test_db_matches_design_doc_counts(db):
     왜 더했나. **전체 보이스피싱의 66.9%가 대면편취형**(현금 인출 후 직접 전달)인데
     DB가 계좌이체 중심이라 실제 녹취 2건을 통째로 놓쳤다.
     """
-    assert db.n_base == 77, f"기본 표현 {db.n_base}개"
-    assert db.n_variants == 121, f"변형 {db.n_variants}개"
-    assert db.n_total == 198, f"합계 {db.n_total}개"
+    assert db.n_base == 78, f"기본 표현 {db.n_base}개"
+    assert db.n_variants == 123, f"변형 {db.n_variants}개"
+    assert db.n_total == 201, f"합계 {db.n_total}개"
 
 
 def test_stage_weights_match_doc(db):
@@ -333,6 +333,11 @@ def test_matcher_still_catches_intended_stt_errors():
     ("서부경찰서 수사과", "경찰청"),
     ("엄마 요즘 보이스피싱", "엄마 나"),
     ("오늘 날씨가 참 좋네요", "오늘까지"),
+    # 아래 셋은 **실제 오디오를 통째로 돌려보고** 찾았다 (`e2e_test.py`).
+    # 텍스트 시나리오에는 없던 형태라 그전까지 안 잡혔다.
+    ("계좌에 있는 돈을 안전하게 관리하기 위해", "계좌이체"),
+    ("기존 대출금을 현금으로 상환하여야 합니다", "현금으로 찾"),
+    ("상환금을 지금 불러드리는 계좌로", "지금 바로"),
 ])
 def test_matcher_no_phantom_match_in_ordinary_speech(sentence, keyword):
     """정상 발화에 없는 표현이 "있다"고 나오면 안 된다.

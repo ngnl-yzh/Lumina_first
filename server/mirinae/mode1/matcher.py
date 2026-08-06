@@ -202,12 +202,27 @@ class MatchSpan:
         return self.kind == "approx"
 
 
+# 편집거리 2를 허용하려면 이 음절 수 이상이어야 한다.
+#
+# 4음절은 자모가 8개 안팎이라 거리 2면 **4분의 1이 달라도 통과**한다.
+# 종단 실행(`e2e_test.py`)에서 실제로 걸렸다 —
+# "계좌**에** 있는 돈을 안전하게 관리하기 위해"가 `계좌이체`로 매칭됐다(거리 2).
+# "계좌에"는 완전히 정상적인 한국어이고, 텍스트 시나리오에는 없던 형태였다.
+# 오디오를 통째로 돌려보지 않았으면 못 찾았을 오탐이다.
+BUDGET2_MIN_SYLLABLES = 6
+
+
 def approx_budget(n_syllables: int, n_jamo: int,
                   threshold: float = APPROX_THRESHOLD) -> int | None:
-    """근사매칭 허용 편집거리. None이면 근사매칭을 쓰지 않는다."""
+    """근사매칭 허용 편집거리. None이면 근사매칭을 쓰지 않는다.
+
+    짧은 표현일수록 엄격하게 간다. 같은 편집거리라도 짧을수록 **비율이 크고**,
+    비율이 크면 다른 단어가 걸린다.
+    """
     if n_syllables < MIN_APPROX_SYLLABLES:
         return None
-    return max(1, min(int(n_jamo * threshold), MAX_EDIT_BUDGET))
+    cap = MAX_EDIT_BUDGET if n_syllables >= BUDGET2_MIN_SYLLABLES else 1
+    return max(1, min(int(n_jamo * threshold), cap))
 
 
 def _find_approx(hay: Analyzed, ndl: Analyzed, budget: int) -> MatchSpan | None:

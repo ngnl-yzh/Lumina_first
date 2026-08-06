@@ -99,7 +99,7 @@ def build_warning(result: ScoreResult, db: PatternDB) -> WarningMessage:
     if not counters:
         counters = [DEFAULT_COUNTER]
 
-    quote = (f"지금 통화에서 “{quoted}” 라는 말이 나왔습니다."
+    quote = (f"지금 통화에서 “{quoted}”{_quote_tail(quoted)}"
              if quoted else "지금 통화가 보이스피싱으로 의심됩니다.")
 
     return WarningMessage(
@@ -110,6 +110,33 @@ def build_warning(result: ScoreResult, db: PatternDB) -> WarningMessage:
         action="확인이 어려우면 112로 전화하세요.",
         tts_tokens=_tts_tokens(spoken, result),
     )
+
+
+HANGUL_BASE, HANGUL_LAST = 0xAC00, 0xD7A3
+
+QUOTE_TAIL_NO_JONG = " 라는 말이 나왔습니다."     # 받침 없음 — "안전계좌라는"
+QUOTE_TAIL_JONG = "이라는 말이 나왔습니다."       # 받침 있음 — "발설하면이라는"
+
+
+def has_final_consonant(word: str) -> bool:
+    """마지막 글자에 받침이 있는가. 조사 선택에 쓴다."""
+    if not word:
+        return False
+    code = ord(word[-1])
+    if HANGUL_BASE <= code <= HANGUL_LAST:
+        return (code - HANGUL_BASE) % 28 != 0
+    return False          # 숫자·영문은 받침 없는 쪽으로 읽는 편이 자연스럽다
+
+
+def _quote_tail(word: str | None) -> str:
+    """인용 뒤에 붙는 조사.
+
+    종단 실행에서 잡혔다 — 개입 문구가 `“발설하면” 라는 말이 나왔습니다`로 나왔다.
+    "발설하면"은 받침이 있으므로 "이라는"이 맞다.
+    화면에도 뜨고 음성으로도 읽히는 문장이라 어색하면 바로 티가 난다.
+    개입은 피해자를 각성시키는 것이 목적인데, 문장이 어설프면 신뢰를 잃는다.
+    """
+    return QUOTE_TAIL_JONG if has_final_consonant(word or "") else QUOTE_TAIL_NO_JONG
 
 
 def _base_text(db: PatternDB, sid: str, form: str) -> str:
@@ -148,7 +175,9 @@ def _tts_tokens(quoted: str | None, result: ScoreResult) -> list[str]:
     tokens = ["frame_intro"]
     if quoted:
         tokens.append(f"kw::{quoted}")
-    tokens.append("frame_quote_tail")
+    # 조사가 두 가지이므로 조각도 두 개다. 하나만 만들어 두면 나머지 경우에 무음이 된다.
+    tokens.append("frame_quote_tail_jong" if has_final_consonant(quoted or "")
+                  else "frame_quote_tail")
     for cid in result.criticals[:2]:
         tokens.append(f"counter::{cid}")
     if not result.criticals:
@@ -164,7 +193,8 @@ def tts_bank_manifest(db: PatternDB) -> dict[str, str]:
     """
     manifest: dict[str, str] = {
         "frame_intro": "지금 통화에서",
-        "frame_quote_tail": "라는 말이 나왔습니다.",
+        "frame_quote_tail": QUOTE_TAIL_NO_JONG.strip(),
+        "frame_quote_tail_jong": QUOTE_TAIL_JONG.strip(),
         "frame_control": "지금 전화를 끊으셔도 아무 일도 생기지 않습니다.",
         "frame_action": "확인이 어려우면 112로 전화하세요.",
         "counter::default": DEFAULT_COUNTER,
