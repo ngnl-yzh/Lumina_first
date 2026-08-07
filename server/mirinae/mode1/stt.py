@@ -47,7 +47,46 @@ PROMPT_MAX_CHARS = 220
 # 깨끗한 음성에서는 차이가 거의 없다(CER 7.2% → 6.9%). **열화된 조건에서만 효과가 난다** —
 # 그리고 실제 통화가 바로 그 조건이다. 예전 측정이 "효과 없음"으로 결론 난 이유가
 # 이것이라고 본다. 다만 표본이 3건이라 넓은 재측정이 필요하다.
-HOTWORDS_MAX_CHARS = 200
+#
+# ## 범위 — 전부 넣으면 안 된다
+#
+# 실사용에서 "자산"이 "사산"으로 들린 사례를 받아 범위를 스윕했다.
+# 전부 넣으면 디코딩이 오염된다 — 800자에서 "범죄에"가 "검주의"로,
+# "수사가"가 "주사가"로 바뀌었다(CER 20.2%로 최악).
+# 어휘를 미는 것은 다른 단어를 밀어내는 것이기도 하다.
+#
+# ## 표본이 적어 설정 순위가 흔들린다 — 확정값이 아니다
+#
+# 시나리오 3건과 4건에서 두 번 쟀는데 **순위가 크게 뒤바뀌었다.**
+# 예: "타임스탬프 없음"이 CER 16.0%·적중 86%에서 30.6%·적중 68%로.
+#
+# 두 실행에서 **일관된 것은 이것뿐이다.**
+#
+#   설정              실행A(3건)              실행B(4건)
+#   hotwords 없음     CER 30.5% · 적중 57%    CER 43.1% · 적중 38%
+#   critical만        CER 17.2% · 적중 57%    CER 18.0% · 적중 49%
+#   상위6 · 400자     CER 20.0% · 적중 71%    CER 17.4% · 적중 59%   ← 채택
+#
+#   ① hotwords가 없으면 확실히 나쁘다. 두 실행 모두 큰 차이로.
+#   ② 범위는 CER과 키워드 적중이 **서로 다른 답을 준다.**
+#      CER만 보면 critical만이 낫고, 키워드 적중은 상위6이 두 실행 모두 높다.
+#      **키워드 적중을 택한다** — 탐지율을 직접 정하는 것은 이쪽이다.
+#      CER은 사람이 화면에서 읽는 품질이고, 매처는 자모 근사매칭으로 오차를 흡수한다.
+#
+# beam·타임스탬프·vad_filter·문맥유지는 실행마다 순위가 뒤집히고 일부는
+# **환각 키워드를 만든다**(정답에 없는 위험 표현이 전사에 생긴다 = 곧 오탐).
+# 구별되지 않는 것을 바꾸면 안 되므로 전부 기본값을 유지한다.
+#
+# **표본 4건은 여전히 적다.** 이 값들은 잠정이며, 실사용 녹음이 쌓이면 다시 잰다.
+#
+# ## hotwords로 못 고치는 것도 있다
+#
+# **"자산"은 어떤 설정으로도 복구되지 않았다.** 명시적으로 넣어도 "사산"이었다.
+# 그런 단어는 매처의 자모 근사매칭이 받는다 —
+# "자산 보호 신청"↔"사산 보호 신청"은 초성 1개 차이라 잡힌다.
+# 화면 글자가 어색해도 판정은 정상이라는 뜻이다.
+HOTWORDS_MAX_CHARS = 400
+HOTWORDS_PER_STAGE = 6
 
 
 @dataclass
@@ -115,7 +154,8 @@ def build_initial_prompt(db=None, max_chars: int = PROMPT_MAX_CHARS) -> str:
     return ", ".join(out)
 
 
-def build_hotwords(db=None, max_chars: int = HOTWORDS_MAX_CHARS) -> str:
+def build_hotwords(db=None, max_chars: int = HOTWORDS_MAX_CHARS,
+                   per_stage: int = HOTWORDS_PER_STAGE) -> str:
     """Whisper에 미리 알려줄 위험 어휘. `initial_prompt`과 다른 경로로 들어간다.
 
     프롬프트는 "앞선 대화"로 주입되어 디코딩 전체에 영향을 주고 지연을 늘린다.
@@ -132,17 +172,17 @@ def build_hotwords(db=None, max_chars: int = HOTWORDS_MAX_CHARS) -> str:
 
     terms: list[str] = [c.text for c in db.criticals]
     for sid in sorted(db.stages, key=lambda s: -db.stages[s].weight):
-        for kw in db.stages[sid].keywords[:3]:
+        for kw in db.stages[sid].keywords[:per_stage]:
             if kw.text not in terms:
                 terms.append(kw.text)
 
     out: list[str] = []
     total = 0
     for t in terms:
-        if total + len(t) + 2 > max_chars:
+        if total + len(t) + 1 > max_chars:
             break
         out.append(t)
-        total += len(t) + 2
+        total += len(t) + 1
     return " ".join(out)
 
 

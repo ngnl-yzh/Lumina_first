@@ -147,22 +147,37 @@ def main() -> int:
     if not cases:
         return 1
 
-    prompt = build_initial_prompt(db)
-    hot = ", ".join(f for f in (c.text for c in db.criticals))
+    from mirinae.mode1.stt import build_hotwords
 
+    prompt = build_initial_prompt(db)
+    hot_crit = " ".join(c.text for c in db.criticals)
+    hot_now = build_hotwords(db)                       # 실제 코드 기본값
+
+    # **"기본"은 실제 운영 설정이어야 한다.** 예전에는 hotwords를 빼고 재면서
+    # "기본"이라 이름 붙였다 — 그러면 개선 폭이 부풀려진다.
     configs: list[tuple[str, dict]] = [
-        ("기본 (현재)",            {}),
-        ("beam 1",                {"beam_size": 1}),
-        ("beam 5",                {"beam_size": 5}),
-        ("문맥 유지",              {"condition_on_previous_text": True}),
-        ("vad_filter",            {"vad_filter": True}),
-        ("hotwords(critical)",    {"hotwords": hot}),
+        ("기본 (현재 코드)",        {"hotwords": hot_now}),
+        ("hotwords 없음",         {}),
+        ("hotwords critical만",   {"hotwords": hot_crit}),
+        ("beam 1",                {"hotwords": hot_now, "beam_size": 1}),
+        ("beam 5",                {"hotwords": hot_now, "beam_size": 5}),
+        ("문맥 유지",              {"hotwords": hot_now,
+                                   "condition_on_previous_text": True}),
+        ("vad_filter",            {"hotwords": hot_now, "vad_filter": True}),
         ("initial_prompt",        {"initial_prompt": prompt}),
-        ("타임스탬프 없음",         {"without_timestamps": True}),
+        ("타임스탬프 없음",         {"hotwords": hot_now, "without_timestamps": True}),
+        # 조합 — 단독으로 좋았던 것들을 합치면 실제로 더 나은가
+        ("ts없음 + critical",     {"hotwords": hot_crit, "without_timestamps": True}),
+        ("ts없음 + 상위3",         {"hotwords": build_hotwords(db, 200, 3),
+                                   "without_timestamps": True}),
+        ("ts없음 + hw없음",        {"without_timestamps": True}),
     ]
 
     print(f"모델 {args.model} · 시나리오 {[c[0] for c in cases]}")
-    print(f"조각 수 {[len(c[1]) for c in cases]}\n")
+    print(f"조각 수 {[len(c[1]) for c in cases]}")
+    # 첫 설정이 모델 로드 시간을 떠안으면 그 행만 몇 배로 나온다. 미리 올려 둔다.
+    SpeechToText(model_size=args.model).transcribe_text(cases[0][1][0])
+    print("모델 예열 완료\n")
     print(f"{'설정':<22}{'CER':>8}{'키워드 적중':>12}{'환각 키워드':>12}{'초/통화':>10}")
     print("─" * 66)
 
