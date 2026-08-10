@@ -47,10 +47,13 @@ def test_db_matches_design_doc_counts(db):
     이후 놓친 시나리오 4건(F-B-03·F-C-01·F-E-04·R-A-02)을 분석해 11항을 더했다.
     전부 **완곡·우회 표현**이었다 — "안전계좌" 대신 "제가 알려드리는 계좌",
     "이체" 대신 "옮겨 두시면", "오늘" 대신 "금일 중".
+
+    검증셋 2차에서 3항을 더 더했다 — 메신저피싱의 신분증·카드 사진 요구(S5),
+    릴레이 사기 1단계의 "끊지 마시고"(S4). 둘 다 실제 수법인데 비어 있었다.
     """
-    assert db.n_base == 89, f"기본 표현 {db.n_base}개"
-    assert db.n_variants == 164, f"변형 {db.n_variants}개"
-    assert db.n_total == 253, f"합계 {db.n_total}개"
+    assert db.n_base == 92, f"기본 표현 {db.n_base}개"
+    assert db.n_variants == 175, f"변형 {db.n_variants}개"
+    assert db.n_total == 267, f"합계 {db.n_total}개"
 
 
 def test_stage_weights_match_doc(db):

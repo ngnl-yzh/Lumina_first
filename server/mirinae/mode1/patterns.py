@@ -40,6 +40,13 @@ class Keyword:
     text: str
     score: float = 1.0
     variants: list[str] = field(default_factory=list)
+    exact_only: bool = False
+    """근사매칭을 끈다.
+
+    짧고 흔한 음절 조합은 자모 거리 1에서도 다른 말과 충돌한다.
+    검증셋 2차에서 "이 계좌로"(4음절)가 "**여 계좌로**"(급여 계좌로)와
+    거리 1로 걸려 이직 협상 통화를 위험으로 판정했다.
+    """
     generic: bool = False
     """정상 통화에도 흔히 나오는 표현인가.
 
@@ -154,6 +161,7 @@ def load_db(path: Path | str | None = None) -> PatternDB:
             keywords=[
                 Keyword(text=k["text"], score=k.get("score", 1.0),
                         variants=k.get("variants", []),
+                        exact_only=k.get("exact_only", False),
                         generic=k.get("generic", False))
                 for k in body["keywords"]
             ],

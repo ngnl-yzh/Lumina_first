@@ -69,12 +69,39 @@ QUOTE_MARKERS: tuple[str, ...] = (
 # 위험 단계를 지우는 회피가 쉬워지므로, 같은 성능이면 좁은 쪽이 안전하다.
 QUOTE_WINDOW = 14
 
+# ── 기관 고지 문구 ────────────────────────────────────────────────────────────
+#
+# "저희는 계좌번호나 비밀번호를 전화로 **묻지 않습니다**"
+#
+# 모든 정상 금융기관·공공기관이 쓰는 표준 안내 문구다. 그런데 여기에
+# "비밀번호"가 들어 있어서 S5가 걸리고, 기관명(S1)과 만나 P1이 발동해
+# **0.750 위험**이 됐다. 국세청 환급 안내를 사기로 판정한 것이다.
+#
+# 검증셋 2차(K-B-09)가 잡아냈다. 이건 흔한 문구라 실사용에서 계속 터졌을 것이다.
+#
+# 인용과 같은 구조다 — 화자가 그 행위를 **하지 않는다고 선언**하는 문장이므로
+# 그 문장 안의 매칭은 지시가 아니다. 그래서 인용과 같은 자리에서 처리한다.
+#
+# 사기범이 이 문구를 흉내내면? 그 문장 하나가 무효가 될 뿐이다.
+# 사기는 결국 요구를 해야 하고, 그 문장은 따로 걸린다 —
+# 예방 문구를 도배하는 회피(F-E-02·F-A-04)가 이미 그렇게 잡힌다.
+DISCLAIMER_MARKERS: tuple[str, ...] = (
+    "묻지않", "묻지도않", "여쭤보지않", "물어보지않",
+    "요구하지않", "요구드리지않", "요청하지않",
+    "받지않습니다", "안내하지않", "말씀드리지않",
+    "시키지않", "지시하지않", "유도하지않",
+)
+
+# 고지 문구는 매칭 **뒤쪽**에 온다("비밀번호를 전화로 묻지 않습니다").
+# 인용 어미보다 사이가 멀어서 창을 넓게 잡는다.
+DISCLAIMER_WINDOW = 24
+
 
 @dataclass(frozen=True)
 class ContextVerdict:
     """매칭 하나에 대한 문맥 판정."""
 
-    kind: str            # "direct" | "quoted"
+    kind: str            # "direct" | "quoted" | "disclaimer"
     marker: str = ""     # 판정 근거가 된 어미
     evidence: str = ""   # 실제로 본 뒤쪽 구간
 
@@ -86,6 +113,8 @@ class ContextVerdict:
     def why(self) -> str:
         if self.kind == "quoted":
             return f"인용 어미 '{self.marker}' — 남의 말을 옮긴 것으로 판단"
+        if self.kind == "disclaimer":
+            return f"기관 고지 '{self.marker}' — 하지 않는다고 선언한 문장"
         return "직접 발화"
 
 
@@ -109,9 +138,14 @@ def classify(sentence: str, span: MatchSpan) -> ContextVerdict:
         if at >= 0 and (best is None or at < best[0]):
             best = (at, marker)
 
-    if best is None:
-        return DIRECT
-    return ContextVerdict("quoted", marker=best[1], evidence=tail)
+    if best is not None:
+        return ContextVerdict("quoted", marker=best[1], evidence=tail)
+
+    wide = norm[span.end:span.end + DISCLAIMER_WINDOW]
+    for marker in DISCLAIMER_MARKERS:
+        if marker in wide:
+            return ContextVerdict("disclaimer", marker=marker, evidence=wide)
+    return DIRECT
 
 
 # ── 문장 분할 ─────────────────────────────────────────────────────────────────

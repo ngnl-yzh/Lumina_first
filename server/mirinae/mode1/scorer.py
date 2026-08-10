@@ -212,7 +212,8 @@ class Scorer:
             skipped: list[str] = []
             has_specific = False
             for kw in stage.keywords:
-                got = self._first_direct_hit(sentences, kw.all_forms(), skipped)
+                got = self._first_direct_hit(sentences, kw.all_forms(), skipped,
+                                             exact_only=kw.exact_only)
                 if got:
                     form, _span = got
                     best = max(best, kw.score)     # ① default=0.0 대신 초기값 0
@@ -229,7 +230,8 @@ class Scorer:
 
     def _first_direct_hit(self, sentences: list[str], forms: list[str],
                           skipped: list[str],
-                          max_distance: int | None = None
+                          max_distance: int | None = None,
+                          exact_only: bool = False
                           ) -> tuple[str, MatchSpan] | None:
         """인용이 아닌 첫 매칭을 (표현, 매칭구간)으로 돌려준다.
 
@@ -239,8 +241,9 @@ class Scorer:
         """
         for form in forms:
             for sent in sentences:
-                span = self.matcher.find_span(sent, form, max_distance=max_distance)
-                if span is None:
+                span = self.matcher.find_span(sent, form, exact_only=exact_only,
+                                              max_distance=max_distance)
+                if span is None and not exact_only:
                     # 연속 매칭이 실패했을 때만 어절 분리 매칭을 시도한다.
                     # 한국어는 어절 사이에 조사·부사가 자유롭게 끼어들어
                     # "기존 대출을 먼저 상환하셔야"가 "기존 대출 상환"과 끊긴다.
