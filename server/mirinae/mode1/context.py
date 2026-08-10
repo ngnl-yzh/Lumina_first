@@ -63,6 +63,36 @@ QUOTE_MARKERS: tuple[str, ...] = (
 # 넣지도 빼지도 말고 **앞 글자로 가른다.**
 GUARDED_MARKERS: dict[str, str] = {"래서": "그"}
 
+# 인용 어미를 통째로 품고 있는 접속·강조 표현.
+#
+#     그렇다는    ← '다는'      그러라고    ← '라고'
+#     그렇다니까  ← '다니까'    그렇다고    ← '다고'
+#
+# 8차에서 "국고 계좌 **그렇다는** 말씀입니다"가 인용으로 억제됐다(Z-F-02).
+# 7차의 '래서'와 같은 결함인데, 어미마다 앞 글자 가드를 다는 방식으로는
+# 감당이 안 된다 — '라고'·'다고'는 한국어에서 가장 흔한 인용 어미라
+# 가드를 잘못 달면 진짜 인용을 통째로 잃는다.
+#
+# 그래서 **어미가 아니라 표현을 지운다.** 판정 전에 이 문자열들을 창에서
+# 제거하면, 그 안에 든 어미는 애초에 보이지 않고 다른 위치의 진짜 인용은
+# 그대로 남는다.
+CONJUNCTION_NOISE: tuple[str, ...] = (
+    "그렇다는", "그렇다니까", "그렇다고", "그러라고", "그러니까",
+    "그렇다면", "그러다가", "그렇다며", "그러라는",
+)
+
+
+def _strip_conjunctions(text: str) -> str:
+    """접속·강조 표현을 같은 길이의 자리표로 바꾼다.
+
+    길이를 지키는 이유는 인용 어미의 **위치**로 가장 가까운 것을 고르기
+    때문이다. 길이가 바뀌면 그 순서가 흐트러진다.
+    """
+    for phrase in CONJUNCTION_NOISE:
+        if phrase in text:
+            text = text.replace(phrase, "　" * len(phrase))
+    return text
+
 # **'래서'를 통째로 뺐다가 가드로 바꿨다.** 접속부사 "그래서"에 그대로 들어 있어서,
 # 지시 뒤에 "그래서"만 붙이면 억제가 켜졌다. 검증셋 6차에서 실제로 뚫렸다 —
 # "안전계좌로 이체하셔야 합니다 그래서 지금 바로 진행하겠습니다"가 0.593이었다.
@@ -177,7 +207,7 @@ def classify(sentence: str, span: MatchSpan) -> ContextVerdict:
     :param span: 정규화 텍스트 기준 음절 인덱스를 가진 매칭
     """
     norm = normalize(sentence)
-    tail = norm[span.end:span.end + QUOTE_WINDOW]
+    tail = _strip_conjunctions(norm[span.end:span.end + QUOTE_WINDOW])
     if not tail:
         return DIRECT
 
@@ -199,7 +229,7 @@ def classify(sentence: str, span: MatchSpan) -> ContextVerdict:
     if best is not None:
         return ContextVerdict("quoted", marker=best[1], evidence=tail)
 
-    wide = norm[span.end:span.end + DISCLAIMER_WINDOW]
+    wide = _strip_conjunctions(norm[span.end:span.end + DISCLAIMER_WINDOW])
     for marker in DISCLAIMER_MARKERS:
         if marker in wide:
             return ContextVerdict("disclaimer", marker=marker, evidence=wide)

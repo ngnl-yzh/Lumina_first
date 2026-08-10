@@ -51,9 +51,9 @@ def test_db_matches_design_doc_counts(db):
     검증셋 2차에서 3항을 더 더했다 — 메신저피싱의 신분증·카드 사진 요구(S5),
     릴레이 사기 1단계의 "끊지 마시고"(S4). 둘 다 실제 수법인데 비어 있었다.
     """
-    assert db.n_base == 104, f"기본 표현 {db.n_base}개"
-    assert db.n_variants == 222, f"변형 {db.n_variants}개"
-    assert db.n_total == 326, f"합계 {db.n_total}개"
+    assert db.n_base == 105, f"기본 표현 {db.n_base}개"
+    assert db.n_variants == 228, f"변형 {db.n_variants}개"
+    assert db.n_total == 333, f"합계 {db.n_total}개"
 
 
 def test_stage_weights_match_doc(db):
@@ -71,7 +71,7 @@ def test_route_denominators_match_doc():
 
 
 def test_db_has_all_criticals_and_pairs(db):
-    assert [c.id for c in db.criticals] == ["C1", "C2", "C3", "C4", "C5", "C6"]
+    assert [c.id for c in db.criticals] == ["C1", "C2", "C3", "C4", "C5", "C6", "C7"]
     assert [p.id for p in db.pairs] == ["P1", "P2", "P3", "P4"]
 
 
@@ -862,3 +862,36 @@ def test_blocking_third_party_contact_is_isolation(scorer):
 def test_short_agency_name_does_not_ghost_match(scorer):
     """공백을 지우면 "이상한 전화를"이 "한전"이 된다(Y-B-06)."""
     assert scorer.extract("어제 이상한 전화를 받았는데요").hits["S1"] == 0
+
+
+# ── 검증셋 8차 ────────────────────────────────────────────────────────────────
+
+@pytest.mark.parametrize("line", [
+    "안전계좌로 이체하십시오. 규정이 그렇다니까요.",
+    "안전계좌 그렇다는 말씀입니다. 그쪽으로 옮기십시오.",
+    "안전계좌로 옮기세요. 그러라고 있는 규정입니다.",
+])
+def test_conjunctions_do_not_hide_instructions(scorer, line):
+    """접속·강조 표현이 인용 어미를 품고 있어도 억제되면 안 된다.
+
+    '그렇다는'에 '다는'이, '그러라고'에 '라고'가 들어 있다(Z-F-02).
+    어미마다 앞 글자 가드를 다는 방식은 한계에 닿았다 — '라고'·'다고'는
+    가장 흔한 인용 어미라 가드를 잘못 달면 진짜 인용을 통째로 잃는다.
+    그래서 어미가 아니라 **표현을 지운다.**
+    """
+    state = CallState(scorer)
+    state.add_utterance("서울중앙지검 수사관입니다.")
+    r = state.add_utterance(line)
+    assert "C1" in r.criticals, r.why()
+
+
+def test_real_quotation_still_suppressed_after_conjunction_stripping(scorer):
+    """접속부사를 지워도 진짜 인용은 그대로 걸러져야 한다."""
+    r = scorer.score("안전계좌로 이체하라고 했어요. 그래서 은행에 갔었죠.")
+    assert "C1" not in r.criticals, r.why()
+
+
+def test_bankbook_photo_request_is_critical(scorer):
+    """정상 기관은 계좌번호를 묻지 통장 사진을 요구하지 않는다(Z-F-10)."""
+    r = scorer.score("통장이랑 신분증 찍어서 보내주시면 등록해 드릴게요")
+    assert "C7" in r.criticals, r.why()
