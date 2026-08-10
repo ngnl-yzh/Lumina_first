@@ -305,6 +305,18 @@ class Scorer:
                 continue
             if any(not spec.get(s, True) for s in p.needs_specific):
                 continue
+            # 쌍의 **어느 단계에도** 구체적 증거가 없으면 성립하지 않는다.
+            #
+            # 검증셋 7차에서 렌터카 안내가 위험이 됐다(Y-B-05) —
+            # "선납금"(S5)과 "보증금 먼저 결제"(S8) 둘 다 generic인데 P2가 발동했다.
+            # 정상 상거래 용어 두 개가 만나 하한 0.75를 강제한 것이다.
+            #
+            # 5차에서는 "S5는 반드시 specific"이라는 더 강한 규칙을 시도했다가
+            # 회피 시나리오 2건을 잃고 되돌렸다. 이건 그보다 약하다 —
+            # 한쪽만 구체적이면 통과한다. 회피 시나리오는 안전계좌·원격제어 같은
+            # 구체 표현을 쓰므로 영향받지 않는다.
+            if not any(spec.get(s, False) for s in p.stages):
+                continue
             out.append(p.id)
         return out
 

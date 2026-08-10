@@ -56,7 +56,14 @@ QUOTE_MARKERS: tuple[str, ...] = (
     "라나", "다나", "라네", "다네", "라잖", "다잖", "라던데", "다던데",
 )
 
-# **'래서'를 넣었다가 뺐다.** 접속부사 "그래서"에 그대로 들어 있어서,
+# 앞 글자가 이것이면 인용으로 보지 않는다.
+# '래서'는 진짜 인용 어미다("옮기래서" = 옮기라고 해서). 그런데 접속부사
+# "그래서"에도 들어 있다. 6차에서 통째로 뺐더니 7차에서 피해자 진술을
+# 위험으로 판정했다(Y-B-06) — 뺀 대가가 바로 돌아왔다.
+# 넣지도 빼지도 말고 **앞 글자로 가른다.**
+GUARDED_MARKERS: dict[str, str] = {"래서": "그"}
+
+# **'래서'를 통째로 뺐다가 가드로 바꿨다.** 접속부사 "그래서"에 그대로 들어 있어서,
 # 지시 뒤에 "그래서"만 붙이면 억제가 켜졌다. 검증셋 6차에서 실제로 뚫렸다 —
 # "안전계좌로 이체하셔야 합니다 그래서 지금 바로 진행하겠습니다"가 0.593이었다.
 #
@@ -179,6 +186,15 @@ def classify(sentence: str, span: MatchSpan) -> ContextVerdict:
         at = tail.find(marker)
         if at >= 0 and (best is None or at < best[0]):
             best = (at, marker)
+
+    for marker, forbidden in GUARDED_MARKERS.items():
+        at = tail.find(marker)
+        while at >= 0:
+            prev = tail[at - 1] if at > 0 else (norm[span.end - 1] if span.end else "")
+            if prev != forbidden and (best is None or at < best[0]):
+                best = (at, marker)
+                break
+            at = tail.find(marker, at + 1)
 
     if best is not None:
         return ContextVerdict("quoted", marker=best[1], evidence=tail)

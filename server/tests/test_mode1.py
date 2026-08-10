@@ -52,8 +52,8 @@ def test_db_matches_design_doc_counts(db):
     릴레이 사기 1단계의 "끊지 마시고"(S4). 둘 다 실제 수법인데 비어 있었다.
     """
     assert db.n_base == 104, f"기본 표현 {db.n_base}개"
-    assert db.n_variants == 223, f"변형 {db.n_variants}개"
-    assert db.n_total == 327, f"합계 {db.n_total}개"
+    assert db.n_variants == 222, f"변형 {db.n_variants}개"
+    assert db.n_total == 326, f"합계 {db.n_total}개"
 
 
 def test_stage_weights_match_doc(db):
@@ -816,3 +816,49 @@ def test_long_call_does_not_dilute_evidence(scorer):
     ]:
         r = state.add_utterance(line)
     assert r.level == "위험", r.why()
+
+
+# ── 검증셋 7차 ────────────────────────────────────────────────────────────────
+
+def test_guarded_quotative_separates_victim_narration(scorer):
+    """"옮기래서"는 인용이고 "그래서"는 접속부사다. 앞 글자로 가른다.
+
+    6차에서 '래서'를 통째로 뺐더니 7차에서 피해자 진술이 위험이 됐다(Y-B-06).
+    넣으면 회피로가 되고 빼면 피해자를 잡는다 — 가드가 답이었다.
+    """
+    victim = CallState(scorer)
+    for line in ["안전계좌로 옮기래서 은행까지 갔었어요.",
+                 "가족한테 말하지 말래서 혼자 갔는데 창구 직원이 말려줬어요."]:
+        r = victim.add_utterance(line)
+    assert r.level == "안전", r.why()
+
+    scam = CallState(scorer)
+    for line in ["서울중앙지검 수사관입니다.",
+                 "안전계좌로 이체하셔야 합니다 그래서 지금 바로 진행하겠습니다."]:
+        r = scam.add_utterance(line)
+    assert r.level == "위험", r.why()
+
+
+def test_pair_needs_at_least_one_specific_stage(scorer):
+    """정상 상거래 용어 두 개가 만나 하한 0.75를 강제하면 안 된다(Y-B-05).
+
+    이 두 마디만으로는 여전히 "주의"가 나온다 — 대출 경로(C)는 분모가 작아
+    S5·S8 두 단계만 걸려도 0.61이 된다. 여기서 막는 것은 **조합 신호가
+    하한을 강제하는 것**이고, 그것만으로 실사용 오탐이 사라졌다.
+    """
+    state = CallState(scorer)
+    for line in ["장기 렌트라 선납금 삼십만 원 받고 있습니다.",
+                 "보증금 먼저 결제하시면 인수하실 때 정산해 드립니다."]:
+        r = state.add_utterance(line)
+    assert not r.pairs, r.why()
+    assert r.level != "위험", r.why()
+
+
+def test_blocking_third_party_contact_is_isolation(scorer):
+    """"기존 보험사에는 문의하지 마세요" — 확인을 막는 것도 고립이다(Y-F-06)."""
+    assert scorer.extract("기존 보험사에는 문의하지 마세요").hits["S4"] > 0
+
+
+def test_short_agency_name_does_not_ghost_match(scorer):
+    """공백을 지우면 "이상한 전화를"이 "한전"이 된다(Y-B-06)."""
+    assert scorer.extract("어제 이상한 전화를 받았는데요").hits["S1"] == 0
