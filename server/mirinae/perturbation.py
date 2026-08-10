@@ -210,7 +210,24 @@ def pgd_perturbation(
 
     trace: list[float] = []
 
+    # 시간 예산 — 마감을 넘길 것 같으면 남은 스텝을 포기한다.
+    #
+    # 마지막 스텝을 절반만 돌고 끊으면 δ가 제약을 만족하지 않은 채 남는다.
+    # 그래서 **스텝 경계에서만** 끊고, 한 스텝 더 돌 여유가 있는지를 직전 스텝의
+    # 소요 시간으로 예측한다. 예측이 빗나가도 한 스텝만큼만 초과한다.
+    import time as _time
+
+    deadline = (_time.perf_counter() + cfg.time_budget_sec) \
+        if cfg.time_budget_sec else None
+    last_step_sec = 0.0
+    steps_run = 0
+
     for step in range(cfg.steps):
+        if deadline is not None and step > 0:
+            if _time.perf_counter() + last_step_sec > deadline:
+                break
+        step_t0 = _time.perf_counter()
+
         embeds = encoders.embeddings(heard(x + delta))
 
         # untargeted — 원본에서 멀어지기만 하면 된다. 타깃 화자가 필요 없어
@@ -230,6 +247,9 @@ def pgd_perturbation(
                                         cfg.masking_ratio, model))    # ② 제약
             delta.copy_(band_limit(delta, cfg.band_low_hz,
                                    cfg.band_high_hz) * mask)          # ③ 대역·발화 구간
+
+        steps_run = step + 1
+        last_step_sec = _time.perf_counter() - step_t0
 
         if trace_every and (step % trace_every == 0 or step == cfg.steps - 1):
             with torch.no_grad():
@@ -258,7 +278,9 @@ def pgd_perturbation(
         srs=per_enc[encoders.names[0]],
         srs_initial=srs_initial,
         snr_db=snr,
-        steps=cfg.steps,
+        # 실제로 돈 스텝 수. 시간 예산에 걸려 중단됐으면 cfg.steps보다 작다 —
+        # 보고 값이 설정 값과 다를 수 있다는 것이 이 필드의 존재 이유다.
+        steps=steps_run or cfg.steps,
         srs_trace=trace,
         per_encoder_srs=per_enc,
     )

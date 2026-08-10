@@ -379,9 +379,23 @@ async def handler(ws, svc: Services, cfg: PGDConfig) -> None:
 
 async def amain(args) -> None:
     device = default_device()
-    print(f"장치: {device}")
-    if device.type == "cpu":
-        print("  ※ CUDA 없음 — 모드 2 실시간 처리는 불가하다. 모드 1은 동작한다.")
+    print(f"장치: {device}  (torch {torch.__version__})")
+    if device.type == "cuda":
+        print(f"  GPU: {torch.cuda.get_device_name(0)}")
+    else:
+        # GPU가 있는 장비인데 CPU 빌드를 깔아 두는 사고가 잦다.
+        # 조용히 느려지기만 하고 원인이 안 보이므로 크게 알린다.
+        cpu_build = "+cpu" in torch.__version__
+        print("  " + "─" * 62)
+        print("  ※ CUDA를 쓰지 않는다. 모드 2 섭동 주입이 크게 느려진다.")
+        if cpu_build:
+            print("     설치된 torch가 **CPU 빌드**다. GPU가 있다면 이렇게 바꾼다:")
+            print("       pip uninstall -y torch")
+            print("       pip install torch --index-url "
+                  "https://download.pytorch.org/whl/cu121")
+        print("     시간 예산이 걸려 있어 멈추지는 않지만, 스텝이 줄어 방어가 약해진다.")
+        print("     화면의 '스텝' 값을 확인할 것 — 200보다 훨씬 작으면 이 문제다.")
+        print("  " + "─" * 62)
 
     svc = Services(
         device,
