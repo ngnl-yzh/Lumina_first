@@ -43,10 +43,14 @@ def test_db_matches_design_doc_counts(db):
 
     왜 더했나. **전체 보이스피싱의 66.9%가 대면편취형**(현금 인출 후 직접 전달)인데
     DB가 계좌이체 중심이라 실제 녹취 2건을 통째로 놓쳤다.
+
+    이후 놓친 시나리오 4건(F-B-03·F-C-01·F-E-04·R-A-02)을 분석해 11항을 더했다.
+    전부 **완곡·우회 표현**이었다 — "안전계좌" 대신 "제가 알려드리는 계좌",
+    "이체" 대신 "옮겨 두시면", "오늘" 대신 "금일 중".
     """
-    assert db.n_base == 78, f"기본 표현 {db.n_base}개"
-    assert db.n_variants == 123, f"변형 {db.n_variants}개"
-    assert db.n_total == 201, f"합계 {db.n_total}개"
+    assert db.n_base == 89, f"기본 표현 {db.n_base}개"
+    assert db.n_variants == 164, f"변형 {db.n_variants}개"
+    assert db.n_total == 253, f"합계 {db.n_total}개"
 
 
 def test_stage_weights_match_doc(db):
@@ -65,7 +69,7 @@ def test_route_denominators_match_doc():
 
 def test_db_has_all_criticals_and_pairs(db):
     assert [c.id for c in db.criticals] == ["C1", "C2", "C3", "C4", "C5"]
-    assert [p.id for p in db.pairs] == ["P1", "P2", "P3"]
+    assert [p.id for p in db.pairs] == ["P1", "P2", "P3", "P4"]
 
 
 # ── D08 §07 테스트 표 ─────────────────────────────────────────────────────────
@@ -509,3 +513,84 @@ def test_evidence_records_first_appearance(scorer):
     assert seen["S1"] == 1
     assert seen["S4"] == 3
     assert seen["S1"] < seen["S4"], "처음 본 시점이 뒤바뀌었다"
+
+
+# ── 어절 분리 매칭 (gapped) ───────────────────────────────────────────────────
+
+def test_gapped_matching_survives_particle_insertion():
+    """한국어는 어절 사이에 조사·부사가 자유롭게 끼어든다.
+
+    아래 셋은 사기범이 노려서 쓴 회피가 아니라 **그냥 말하면 이렇게 된다.**
+    연속 문자열 매칭은 구조적으로 못 잡았고, 자모 근사로도 풀 수 없다 —
+    끼어든 "을 먼저 "는 자모 7개로 편집거리 예산(최대 2)을 훨씬 넘는다.
+    """
+    m = Matcher()
+    assert m.match("기존 대출을 먼저 상환하셔야 신규 승인이 가능합니다", "기존 대출 상환")
+    assert m.match("가족에게 이 사실을 알리지 마세요", "가족에게 알리지")
+    assert m.match("국고 보호 예치 계좌로 자금을 이관하셔야", "국고 계좌")
+
+
+def test_gapped_matching_respects_distance_limit():
+    """멀리 떨어진 어절은 같은 표현으로 보지 않는다.
+
+    상한을 두지 않으면 "가족"과 "말하지"가 문장 어디에 있든 걸린다.
+    값(4음절)은 감이 아니라 스윕으로 골랐다 — 3 이하면 이득이 없고
+    4~12는 결과가 같아서, 회피 여지가 가장 작은 4를 택했다.
+    """
+    m = Matcher()
+    assert not m.match("가족들이랑 상의해보고 나중에 천천히 말하지 뭐", "가족에게 알리지")
+
+
+def test_gapped_matching_is_fallback_only():
+    """연속 매칭이 되는 경우의 판정을 바꾸지 않는다."""
+    m = Matcher()
+    span = m.find_span("기존 대출 상환이 필요합니다", "기존 대출 상환")
+    assert span is not None and span.kind == "exact"
+
+
+# ── generic 표현과 조합 신호 게이트 ───────────────────────────────────────────
+
+def test_generic_transfer_alone_does_not_trigger_pair(scorer):
+    """"이체"·"송금"만으로는 P4(고립+자금이동)가 발동하면 안 된다.
+
+    검증셋에서 이 게이트 없이 오탐률이 42.9%였다. 그중 하나가
+    **은행 직원이 보이스피싱을 말리는 통화**였다 — 막아야 할 쪽을 사기로 봤다.
+    돈을 보낸다는 사실 자체는 사기의 증거가 아니다.
+    """
+    state = CallState(scorer)
+    for line in [
+        "고객님, 이체 금액이 커서 확인이 좀 필요합니다.",
+        "여기 말고 조용한 곳으로 가서 잠깐 말씀 나눌 수 있을까요?",
+        "가족분께 먼저 연락해 보시고 천천히 생각해 보세요.",
+    ]:
+        r = state.add_utterance(line)
+    assert "P4" not in r.pairs
+    assert r.level == "안전", r.why()
+
+
+def test_specific_transfer_triggers_pair(scorer):
+    """화자가 즉석에서 지정하는 계좌는 다르다. 이건 정상 통화에 없다."""
+    state = CallState(scorer)
+    for line in [
+        "수사 기밀이니 주변에 알리지 마시고 조용한 공간으로 이동해 주세요.",
+        "안전한 보관을 위해 제가 안내드리는 계좌로 예치하시면 됩니다.",
+    ]:
+        r = state.add_utterance(line)
+    assert "P4" in r.pairs
+    assert r.level == "위험", r.why()
+
+
+def test_honorific_direction_separates_scam_from_normal(scorer):
+    """한국어 경어법이 계좌 지정의 방향을 구분해 준다.
+
+    사기  "제가 알려드리는 계좌로"   겸양 '-드리는' → 화자가 계좌를 준다
+    정상  "계좌번호 알려주시면"      존경 '-주시면'  → 청자가 계좌를 준다
+
+    한 발화만 보면 둘 다 S5 하나라 **점수는 같다.** 갈리는 곳은 그다음이다 —
+    겸양 쪽만 generic이 아니므로 고립 신호와 만났을 때 P4를 성립시킨다.
+    """
+    scam = scorer.extract("제가 지금 알려드리는 계좌로 입금해 주세요")
+    normal = scorer.extract("환급받으실 계좌번호를 알려주시면 입금해 드리겠습니다")
+    assert scam.hits["S5"] > 0 and normal.hits["S5"] > 0
+    assert scam.specific["S5"] is True
+    assert normal.specific["S5"] is False

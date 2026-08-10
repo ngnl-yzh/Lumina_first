@@ -40,6 +40,16 @@ class Keyword:
     text: str
     score: float = 1.0
     variants: list[str] = field(default_factory=list)
+    generic: bool = False
+    """정상 통화에도 흔히 나오는 표현인가.
+
+    "이체"·"송금"은 금융 생활의 기본 동작이다. 돈을 보낸다는 **사실 자체는
+    사기의 증거가 아니다.** 증거는 어디로·어떻게 보내느냐다 —
+    화자가 즉석에서 지정한 계좌, 현금 인출 후 대면 전달, 인증정보 요구.
+
+    단계 점수에는 그대로 반영한다. 다만 조합 신호(P4)처럼 하한 0.75를
+    강제하는 무거운 판정은 이 표현만으로 발동하지 않게 막는다.
+    """
 
     def all_forms(self) -> list[str]:
         return [self.text, *self.variants]
@@ -86,6 +96,14 @@ class Pair:
     stages: tuple[str, str]
     principle: str
     fraud_type: str
+    needs_specific: tuple[str, ...] = ()
+    """이 단계들은 **generic이 아닌** 표현으로 걸려야 조합이 성립한다.
+
+    검증셋에서 P4(고립+자금이동)의 오탐 3건이 전부 "이체"·"송금" 단독이었다.
+    은행 직원이 보이스피싱을 말리는 통화까지 사기로 판정했다 — 최악의 오탐이다.
+    같은 검증셋의 진짜 사기 3건은 전부 구체적 형태로 걸렸다
+    ("알려드리는 계좌", "현금으로 찾"+"수사관에게 전달", "예치하시면").
+    """
 
 
 @dataclass
@@ -135,7 +153,8 @@ def load_db(path: Path | str | None = None) -> PatternDB:
             weight=body.get("weight", STAGE_WEIGHTS[sid]),
             keywords=[
                 Keyword(text=k["text"], score=k.get("score", 1.0),
-                        variants=k.get("variants", []))
+                        variants=k.get("variants", []),
+                        generic=k.get("generic", False))
                 for k in body["keywords"]
             ],
         )
@@ -149,7 +168,8 @@ def load_db(path: Path | str | None = None) -> PatternDB:
         ],
         pairs=[
             Pair(id=p["id"], stages=tuple(p["stages"]), principle=p["principle"],
-                 fraud_type=p["fraud_type"])
+                 fraud_type=p["fraud_type"],
+                 needs_specific=tuple(p.get("needs_specific", [])))
             for p in raw.get("pairs", [])
         ],
         benign=raw.get("benign", []),

@@ -84,6 +84,12 @@ MAX_EDIT_BUDGET = 2
 # 2 이상이면 판별력이 사라진다. 1이 "초성 하나까지는 봐준다"에 해당한다.
 CHO_EDIT_BUDGET = 1
 
+# 어절 사이에 끼어들 수 있는 음절 수의 상한. 아래 스윕 결과로 정했다.
+GAP_MAX_SYLLABLES = 4
+
+# 이 길이 미만의 어절은 gapped 매칭에서 정확 일치만 인정한다.
+GAP_MIN_SEGMENT = 3
+
 # 하위 호환 — 예전 이름을 참조하는 코드가 있을 수 있다.
 MIN_APPROX_JAMO = MIN_APPROX_SYLLABLES * 2
 
@@ -275,10 +281,21 @@ class Matcher:
     캐시가 없으면 같은 문자열을 수백 번 다시 분해하게 된다.
     """
 
-    def __init__(self, approx: bool = True, threshold: float = APPROX_THRESHOLD) -> None:
+    def __init__(self, approx: bool = True, threshold: float = APPROX_THRESHOLD,
+                 gapped: bool = True) -> None:
         self.approx = approx
+        self.gapped = gapped
         self.threshold = threshold
         self._cache: dict[str, Analyzed] = {}
+        self._segcache: dict[str, list[str]] = {}
+
+    def _segments(self, needle: str) -> list[str]:
+        """키워드의 어절 분해를 캐시한다. 같은 키워드를 발화마다 다시 쪼갤 이유가 없다."""
+        got = self._segcache.get(needle)
+        if got is None:
+            got = [seg for seg in needle.split() if normalize(seg)]
+            self._segcache[needle] = got
+        return got
 
     def analyzed(self, text: str) -> Analyzed:
         got = self._cache.get(text)
@@ -322,13 +339,87 @@ class Matcher:
                 return None
         return _find_approx(hay, ndl, budget)
 
+    def find_gapped(self, haystack: str, needle: str,
+                    max_gap: int | None = None,
+                    max_distance: int | None = None) -> MatchSpan | None:
+        """어절 사이에 다른 성분이 끼어든 경우를 잡는다.
+
+        한국어는 어절 사이에 조사·부사·수식어가 자유롭게 들어간다.
+        연속 문자열 매칭은 이걸 **구조적으로** 못 잡는다. 실측:
+
+            "가족에게 알리지"   ← "가족에게 이 사실을 알리지 마세요"      놓침
+            "기존 대출 상환"    ← "기존 대출을 먼저 상환하셔야"          놓침
+            "국고 계좌"        ← "국고 보호 예치 계좌로"                놓침
+
+        셋 다 완전히 자연스러운 한국어 문장이다. 사기범이 노려서 쓴 회피가
+        아니라 **그냥 말하면 이렇게 된다.** 놓치는 쪽이 기본값이었다는 뜻이다.
+
+        자모 근사매칭으로는 풀 수 없다. 끼어든 어절이 편집거리 예산(최대 2)을
+        훨씬 넘기 때문이다 — "을 먼저 "는 자모 7개다.
+
+        그래서 **어절 단위로 쪼개 순서대로** 찾는다. 각 어절은 기존 매칭
+        (정확 → 자모 근사)을 그대로 쓰고, 어절 사이에 `max_gap` 음절까지
+        허용한다. 문장 단위로 호출되므로 문장을 넘어가지 않는다.
+
+        오탐을 막는 제약 셋:
+          - **연속 매칭이 실패했을 때만** 시도한다. 기존 판정을 바꾸지 않는다.
+          - 어절이 `GAP_MIN_SEGMENT` 음절 미만이면 **정확 일치만** 인정한다.
+            1~2음절 어절은 근사까지 허용하면 아무 데나 걸린다.
+          - 어절이 하나뿐인 키워드는 대상이 아니다. 쪼갤 것이 없다.
+        """
+        if not self.gapped:
+            return None
+        if max_gap is None:
+            max_gap = GAP_MAX_SYLLABLES
+        segs = self._segments(needle)
+        if len(segs) < 2:
+            return None
+
+        # 조기 종료 — 짧은 어절은 어차피 정확 일치만 인정하므로,
+        # 문자열에 아예 없으면 순서 탐색을 시작할 이유가 없다.
+        # 이 검사가 gapped 경로 비용의 절반을 걷어낸다.
+        hay_text = self.analyzed(haystack).text
+        for seg in segs:
+            seg_norm = normalize(seg)
+            if len(seg_norm) < GAP_MIN_SEGMENT and seg_norm not in hay_text:
+                return None
+
+        cursor = 0
+        start = end = None
+        total_distance = 0
+        hay_norm = hay_text
+
+        for seg in segs:
+            seg_n = self.analyzed(seg)
+            tail = hay_norm[cursor:]
+            span = self.find_span(
+                tail, seg,
+                exact_only=seg_n.n_syllables < GAP_MIN_SEGMENT,
+                max_distance=max_distance,
+            )
+            if span is None:
+                return None
+            abs_start, abs_end = cursor + span.start, cursor + span.end
+            if start is None:
+                start = abs_start
+            elif abs_start - end > max_gap:
+                return None            # 너무 멀다. 같은 표현으로 보기 어렵다
+            end = abs_end
+            total_distance += span.distance
+            cursor = abs_end
+
+        return MatchSpan(normalize(needle), "gapped", start, end, total_distance)
+
     def match(self, haystack: str, needle: str, exact_only: bool = False,
               max_distance: int | None = None) -> bool:
         """haystack 안에 needle이 있는가.
 
         :param exact_only: benign 지시어에 쓴다. 근사매칭을 끄는 비대칭 설계의 한쪽.
         """
-        return self.find_span(haystack, needle, exact_only, max_distance) is not None
+        span = self.find_span(haystack, needle, exact_only, max_distance)
+        if span is None and not exact_only:
+            span = self.find_gapped(haystack, needle)
+        return span is not None
 
     def find_all(self, haystack: str, needles: list[str],
                  exact_only: bool = False) -> list[str]:
@@ -340,6 +431,8 @@ class Matcher:
         out = []
         for n in needles:
             span = self.find_span(haystack, n, exact_only)
+            if span is None and not exact_only:
+                span = self.find_gapped(haystack, n)
             if span:
                 out.append(span)
         return out

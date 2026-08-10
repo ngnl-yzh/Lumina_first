@@ -105,6 +105,7 @@ class Evidence:
     suppressed: dict[str, list[str]] = field(default_factory=dict)
     criticals: list[str] = field(default_factory=list)
     benign: list[str] = field(default_factory=list)
+    specific: dict[str, bool] = field(default_factory=dict)
     first_seen: dict[str, int] = field(default_factory=dict)
     n_units: int = 0
 
@@ -118,6 +119,8 @@ class Evidence:
             self.matched[sid] = _dedupe(self.matched.get(sid, []) + forms)
         for sid, forms in other.suppressed.items():
             self.suppressed[sid] = _dedupe(self.suppressed.get(sid, []) + forms)
+        for sid, v in other.specific.items():
+            self.specific[sid] = self.specific.get(sid, False) or v
         self.criticals = _dedupe(self.criticals + other.criticals)
         self.benign = _dedupe(self.benign + other.benign)
         for sid, idx in other.first_seen.items():
@@ -186,7 +189,8 @@ class Scorer:
 
     def stage_hits(
         self, text: str
-    ) -> tuple[dict[str, float], dict[str, list[str]], dict[str, list[str]]]:
+    ) -> tuple[dict[str, float], dict[str, list[str]], dict[str, list[str]],
+               dict[str, bool]]:
         """단계별 최고 점수와 매칭된 표현, 그리고 문맥으로 제외된 표현.
 
         **합산이 아니라 max**를 쓴다. 같은 단계의 표현을 여러 번 말했다고 해서
@@ -200,23 +204,28 @@ class Scorer:
         hits: dict[str, float] = {}
         matched: dict[str, list[str]] = {}
         suppressed: dict[str, list[str]] = {}
+        specific: dict[str, bool] = {}
 
         for sid, stage in self.db.stages.items():
             best = 0.0
             found: list[str] = []
             skipped: list[str] = []
+            has_specific = False
             for kw in stage.keywords:
                 got = self._first_direct_hit(sentences, kw.all_forms(), skipped)
                 if got:
                     form, _span = got
                     best = max(best, kw.score)     # ① default=0.0 대신 초기값 0
                     found.append(form)
+                    if not kw.generic:
+                        has_specific = True
             hits[sid] = best
+            specific[sid] = has_specific
             if found:
                 matched[sid] = found
             if skipped:
                 suppressed[sid] = _dedupe(skipped)
-        return hits, matched, suppressed
+        return hits, matched, suppressed, specific
 
     def _first_direct_hit(self, sentences: list[str], forms: list[str],
                           skipped: list[str],
@@ -231,6 +240,12 @@ class Scorer:
         for form in forms:
             for sent in sentences:
                 span = self.matcher.find_span(sent, form, max_distance=max_distance)
+                if span is None:
+                    # 연속 매칭이 실패했을 때만 어절 분리 매칭을 시도한다.
+                    # 한국어는 어절 사이에 조사·부사가 자유롭게 끼어들어
+                    # "기존 대출을 먼저 상환하셔야"가 "기존 대출 상환"과 끊긴다.
+                    span = self.matcher.find_gapped(sent, form,
+                                                    max_distance=max_distance)
                 if span is None:
                     continue
                 if classify(sent, span).suppressed:
@@ -255,11 +270,18 @@ class Scorer:
                 skipped.append(c.id)
         return out, _dedupe(skipped)
 
-    def find_pairs(self, hits: dict[str, float]) -> list[str]:
-        return [
-            p.id for p in self.db.pairs
-            if all(hits.get(s, 0.0) > 0 for s in p.stages)
-        ]
+    def find_pairs(self, hits: dict[str, float],
+                   specific: dict[str, bool] | None = None) -> list[str]:
+        """조합 신호. `needs_specific` 단계는 generic 표현만으로는 성립하지 않는다."""
+        spec = specific or {}
+        out = []
+        for p in self.db.pairs:
+            if not all(hits.get(s, 0.0) > 0 for s in p.stages):
+                continue
+            if any(not spec.get(s, True) for s in p.needs_specific):
+                continue
+            out.append(p.id)
+        return out
 
     def find_benign(self, text: str) -> list[str]:
         """benign은 **정확 일치만** 쓴다 — 비대칭 설계.
@@ -276,7 +298,7 @@ class Scorer:
 
         :param index: 이 발화의 번호. 단계가 처음 등장한 시점을 기록하는 데 쓴다.
         """
-        hits, matched, suppressed = self.stage_hits(text)
+        hits, matched, suppressed, specific = self.stage_hits(text)
         criticals, crit_skipped = self.find_criticals(text)
         if crit_skipped:
             suppressed = {**suppressed, "critical": crit_skipped}
@@ -286,6 +308,7 @@ class Scorer:
             suppressed=suppressed,
             criticals=criticals,
             benign=self.find_benign(text),
+            specific=specific,
             first_seen={s: index for s, v in hits.items() if v > 0},
             n_units=1,
         )
@@ -335,7 +358,7 @@ class Scorer:
         score = min(1.0, max(0.0, raw))
 
         criticals = ev.criticals
-        pairs = self.find_pairs(hits)
+        pairs = self.find_pairs(hits, ev.specific)
 
         # 하한은 감점을 받지 않는다 — 감점으로 무너뜨릴 수 있으면 하한이 아니다.
         #
