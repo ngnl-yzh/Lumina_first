@@ -527,12 +527,14 @@ h1.page {
   line-height: 1.6;
 }
 
+/* 판정은 색으로만 가른다. 옆줄을 세우면 카드마다 색 막대가 늘어서
+   정작 읽어야 할 문장보다 장식이 먼저 눈에 들어온다. */
 .verdict-ok {
   background: #eef6f1;
-  border-left: 3px solid var(--safe);
+  color: #1f5f42;
 }
 
 .verdict-bad {
   background: #fbeef2;
-  border-left: 3px solid var(--gap);
+  color: #7d2444;
 }
