@@ -62,27 +62,45 @@ def main() -> int:
     ap = argparse.ArgumentParser(description="섭동 주입 검증")
     ap.add_argument("folder", nargs="?", default="out/demo",
                     help="protect.py 출력 폴더")
+    # 앱(모드 2)에서 받은 파일에는 delta.wav도 대조군도 없다.
+    # 그 경우 δ를 두 파일의 차이로 구하고, 대조군이 필요한 검사는 건너뛴다.
+    ap.add_argument("--original", help="원본 WAV — 폴더 대신 파일 두 개로 검증")
+    ap.add_argument("--protected", help="보호본 WAV")
     ap.add_argument("--channel", action="store_true",
                     help="통화 채널(300~3400 Hz · 8 kHz · G.711) 통과 후로 평가")
     ap.add_argument("--silence-db", type=float, default=-45.0,
                     help="이 아래를 무음 구간으로 본다")
     args = ap.parse_args()
 
-    d = Path(args.folder)
-    orig_p, prot_p, delta_p = d / "original.wav", d / "protected.wav", d / "delta.wav"
-    for p in (orig_p, prot_p, delta_p):
-        if not p.exists():
-            print(f"{p} 가 없다. 먼저 `python protect.py 목소리.wav -o {d}` 를 돌릴 것.")
-            return 1
+    pair_mode = bool(args.original and args.protected)
+    if pair_mode:
+        d = Path(args.protected).parent
+        orig_p, prot_p = Path(args.original), Path(args.protected)
+        for p in (orig_p, prot_p):
+            if not p.exists():
+                print(f"{p} 가 없다.")
+                return 1
+        x, y = load(orig_p), load(prot_p)
+        n = min(len(x), len(y))
+        x, y = x[:n], y[:n]
+        delta = y - x            # δ를 직접 갖고 있지 않으니 차이로 구한다
+    else:
+        d = Path(args.folder)
+        orig_p, prot_p, delta_p = (d / "original.wav", d / "protected.wav",
+                                   d / "delta.wav")
+        for p in (orig_p, prot_p, delta_p):
+            if not p.exists():
+                print(f"{p} 가 없다. "
+                      f"먼저 `python protect.py 목소리.wav -o {d}` 를 돌리거나, "
+                      f"앱에서 받은 파일이면 --original / --protected 로 넘길 것.")
+                return 1
+        x, y, delta = load(orig_p), load(prot_p), load(delta_p)
+        n = min(len(x), len(y), len(delta))
+        x, y, delta = x[:n], y[:n], delta[:n]
 
     device = default_device()
-    x = load(orig_p)
-    y = load(prot_p)
-    delta = load(delta_p)
-    n = min(len(x), len(y), len(delta))
-    x, y, delta = x[:n], y[:n], delta[:n]
 
-    print(f"폴더: {d}")
+    print(f"입력: {orig_p.name} · {prot_p.name}" if pair_mode else f"폴더: {d}")
     print(f"길이: {n / SAMPLE_RATE:.1f}초 · 장치: {device}")
     if device.type != "cuda":
         print("  ※ CUDA가 아니다. GPU 장비인데 이게 뜨면 torch가 CPU 빌드다 (SETUP.md 1단계)")
@@ -102,13 +120,16 @@ def main() -> int:
 
     # ── ① 파일 무결성 ─────────────────────────────────────────────────────────
     print("① 파일 무결성 — protected = original + delta 인가")
-    resid = float((y - (x + delta)).abs().max())
-    scale = max(float(y.abs().max()), 1e-12)
-    ok = resid / scale < 1e-3
-    print(f"   {mark(ok)}  최대 잔차 {resid:.2e} (신호 대비 {resid / scale * 100:.4f}%)")
-    if not ok:
-        print("        → 세 파일이 서로 맞지 않는다. 다른 실행의 산출물이 섞였을 수 있다.")
-        fails += 1
+    if pair_mode:
+        print("   —     δ를 두 파일의 차이로 구했으므로 정의상 성립. 검사 생략")
+    else:
+        resid = float((y - (x + delta)).abs().max())
+        scale = max(float(y.abs().max()), 1e-12)
+        ok = resid / scale < 1e-3
+        print(f"   {mark(ok)}  최대 잔차 {resid:.2e} (신호 대비 {resid / scale * 100:.4f}%)")
+        if not ok:
+            print("        → 세 파일이 서로 맞지 않는다. 다른 실행의 산출물이 섞였을 수 있다.")
+            fails += 1
     print()
 
     # ── ② 섭동 존재 ───────────────────────────────────────────────────────────
@@ -209,11 +230,23 @@ def main() -> int:
             print("        → 인코더가 이상하다. 아래 수치를 믿을 수 없다.")
             fails += 1
 
-    dropped = srs_prot < 0.95
-    print(f"   {mark(dropped)}  보호본 {srs_prot:.4f}  "
+    # 판정은 **임계값 기준**이어야 한다.
+    #
+    # 한때 `srs_prot < 0.95`였다. 실사용 파일이 0.9466으로 들어왔을 때
+    # 이 검사가 OK를 냈다 — 방어가 사실상 없는데 통과시킨 것이다.
+    # "0.95만 넘지 않으면 된다"는 근거 없는 기준이었고,
+    # 실제로 의미 있는 선은 C-D 대조군에서 측정한 판정 임계값이다.
+    below = srs_prot < THRESHOLD
+    near = srs_prot < THRESHOLD + 0.05
+    print(f"   {mark(below, warn=not below and near)}  보호본 {srs_prot:.4f}  "
           f"(판정 임계값 {THRESHOLD} — 이 아래면 '다른 화자')")
-    if not dropped:
-        print("        → 유사도가 거의 안 떨어졌다. 섭동은 들어갔지만 효과가 없다.")
+    if not below:
+        gap = srs_prot - THRESHOLD
+        print(f"        → 임계값보다 {gap:+.4f} 높다. **'다른 화자'로 판정되지 않는다.**")
+        if srs_prot > 0.9:
+            print("        → 0.9를 넘는다는 것은 최적화가 사실상 안 됐다는 뜻이다.")
+            print("           PGD 스텝이 몇 번 돌았는지 확인할 것 "
+                  "(앱 화면의 '스텝', 또는 서버 로그)")
         fails += 1
 
     beat = [k for k, v in controls.items()

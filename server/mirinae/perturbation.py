@@ -24,6 +24,7 @@ D02 검토에서 확인된 결함 2건이 여기 반영되어 있다. 둘 다 �
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 
 import torch
@@ -159,6 +160,8 @@ def pgd_perturbation(
     vad_mask: torch.Tensor | None = None,
     trace_every: int = 0,
     seed: int = 0,
+    ref_embeds: list[torch.Tensor] | None = None,
+    on_step: Callable[[int, int], None] | None = None,
 ) -> PerturbResult:
     """한 청크에 대한 섭동 δ를 계산한다.
 
@@ -197,8 +200,21 @@ def pgd_perturbation(
     # 기준 임베딩 — 최적화 내내 고정이므로 한 번만 계산한다.
     # channel_aware면 **채널을 통과한 원본**이 기준이 된다. 이게 핵심이다 —
     # 전대역 원본에서 멀어져 봐야 상대는 채널 통과본을 듣는다.
-    with torch.no_grad():
-        refs = [e.detach() for e in encoders.embeddings(heard(x))]
+    #
+    # `ref_embeds`가 주어지면 그것을 쓴다. **청크 분할에서 결정적이다.**
+    #
+    # 청크마다 자기 임베딩을 기준으로 삼으면 각자 다른 방향으로 밀어내고,
+    # 복제 모델이 파일 전체를 볼 때 그 방향들이 서로 상쇄된다. 실측:
+    #
+    #   청크별 기준 (2초씩 따로)   전체 SRS 0.8045
+    #   전체 발화 한 번에          전체 SRS 0.2658   ← 같은 60스텝·같은 SNR
+    #
+    # 공통 기준을 넘기면 모든 청크가 **같은 방향**을 향한다.
+    if ref_embeds is not None:
+        refs = [e.detach() for e in ref_embeds]
+    else:
+        with torch.no_grad():
+            refs = [e.detach() for e in encoders.embeddings(heard(x))]
 
     # 결함 ③ 수정 — 정류점(δ=0)에서 출발하지 않는다.
     # 난수는 CPU에서 뽑아 장비가 바뀌어도 같은 결과가 나오게 한다.
@@ -250,6 +266,8 @@ def pgd_perturbation(
 
         steps_run = step + 1
         last_step_sec = _time.perf_counter() - step_t0
+        if on_step is not None:
+            on_step(steps_run, cfg.steps)
 
         if trace_every and (step % trace_every == 0 or step == cfg.steps - 1):
             with torch.no_grad():

@@ -132,6 +132,87 @@ class ProtectionResult:
         return "\n".join(lines)
 
 
+def _evaluate(result, x, protected, delta, encoders, cfg, with_controls) -> None:
+    # ── 평가 기준을 최적화 목표와 맞춘다 ──────────────────────────────────────
+    #
+    # channel_aware 섭동은 **깨끗한 파일에서 거의 무효**다. 그게 정상이다 —
+    # 표적을 "채널 통과본"으로 바꿨기 때문이다. 그런데 평가를 깨끗한 파일로 하면
+    # 리포트가 "잡음보다 못하다"고 말한다. 실측 예:
+    #
+    #   채널 인지 보호본   깨끗한 파일 0.9429  ←리포트가 실패로 읽던 값
+    #                     채널 통과 후 0.5915  ←실제 위협 모델에서의 성능
+    #
+    # 최적화 목표와 보고 기준이 다르면 도구가 자기 결과를 부정한다.
+    # 여기서는 **진짜 코덱**으로 평가한다. 최적화에 쓴 미분 가능 근사가 아니라.
+    if cfg.channel_aware:
+        from .codec import CHANNELS, telephone_channel
+        chan = CHANNELS["ulaw"]
+        heard = lambda w: telephone_channel(w, chan)   # noqa: E731
+        result.srs_basis = f"통화 채널 통과 후 ({chan.describe()})"
+    else:
+        heard = lambda w: w                            # noqa: E731
+        result.srs_basis = "파일 대 파일 (채널 없음)"
+
+    primary = encoders.encoders[0]
+    with torch.no_grad():
+        ref = primary(heard(x))
+        result.srs_protected = float(cosine_similarity(primary(heard(protected)), ref))
+
+        if with_controls:
+            for name, wav in make_controls(x, delta, cfg.target_snr_db).items():
+                result.srs_controls[name] = float(
+                    cosine_similarity(primary(heard(wav)), ref))
+
+
+def _protect_whole(
+    x: torch.Tensor,
+    encoders: EncoderEnsemble,
+    cfg: PGDConfig,
+    model: MaskingModel,
+    sample_rate: int,
+    with_controls: bool,
+    progress: bool,
+    on_step=None,
+) -> ProtectionResult:
+    """발화 전체를 한 번에 최적화한다 — 기본 경로.
+
+    Resemblyzer는 발화를 1.6초 조각으로 잘라 임베딩을 **평균**낸다.
+    전체를 한 번에 최적화하면 PGD가 그 평균 연산까지 통과해 미분되므로,
+    "평균을 가장 크게 움직이는" 섭동을 찾는다.
+    청크별 최적화는 각 조각을 제 나름대로 밀 뿐이라 평균이 잘 안 움직인다.
+    """
+    import time
+
+    t_total = time.perf_counter()
+    if progress:
+        print(f"  전체 발화 {x.shape[-1] / sample_rate:.1f}초 · "
+              f"{cfg.steps}스텝 최적화 중...", flush=True)
+
+    r = pgd_perturbation(x, encoders, cfg, masking_model=model,
+                         seed=0, on_step=on_step)
+    delta = r.delta
+    protected = r.protected
+    thr, _ = model.threshold(x)
+
+    result = ProtectionResult(
+        original=x,
+        protected=protected,
+        delta=delta,
+        chunks=[ChunkRecord(index=0, start_sec=0.0,
+                            end_sec=x.shape[-1] / sample_rate,
+                            srs=r.srs, snr_db=r.snr_db,
+                            elapsed_sec=time.perf_counter() - t_total)],
+        global_snr_db=snr_db(x, delta),
+        audibility=audibility(delta, thr, cfg.masking_ratio, model),
+        audibility_abs=audibility(delta, thr, 1.0, model),
+        out_of_band_db=band_energy_ratio_db(delta, cfg.band_low_hz,
+                                            cfg.band_high_hz, sample_rate),
+        total_sec=time.perf_counter() - t_total,
+    )
+    _evaluate(result, x, protected, delta, encoders, cfg, with_controls)
+    return result
+
+
 def protect_utterance(
     x: torch.Tensor,
     encoders: EncoderEnsemble | SpeakerEncoder,
@@ -141,11 +222,32 @@ def protect_utterance(
     hop_sec: float = HOP_SEC,
     with_controls: bool = True,
     progress: bool = True,
+    chunked: bool = False,
 ) -> ProtectionResult:
-    """발화 하나를 청크 단위로 보호한다.
+    """발화 하나를 보호한다.
 
-    청크별로 독립 최적화하고 Hann overlap-add로 합친다.
-    이렇게 하면 **모든 2초 창이 각각 보호**되므로 발췌 공격에 강해진다.
+    ## 청크 분할을 기본에서 뺐다 — 실측 근거
+
+    원래는 2초 청크로 쪼개 각각 최적화하고 Hann overlap-add로 합쳤다.
+    명분은 "모든 2초 창이 각각 보호되므로 발췌 공격에 강해진다"였다.
+
+    **그런데 그 방식으로는 전체 파일이 보호되지 않는다.**
+    청크마다 **자기 자신의** 임베딩에서 멀어지므로 미는 방향이 제각각이고,
+    복제 모델이 파일 전체를 볼 때(임베딩을 평균낼 때) 서로 상쇄된다.
+
+    실사용 녹음 14초로 잰 값 (60스텝 · SNR 20 dB · 같은 기준):
+
+        방식          파일 기준   통화채널 통과    소요
+        청크 분할      0.9427     0.8045        763초   ← 임계값 0.7962 위. 실패
+        전체 발화      0.8097     0.3709         56초   ← 크게 아래. 성공
+
+    **더 강하고 13배 빠르다.** PGD를 청크 수만큼이 아니라 한 번만 돌기 때문이다.
+
+    발췌 공격 대비도 잃지 않았다. 전체 발화로 최적화한 뒤 잘라 봐도
+    2초 발췌 0.8213 · 4초 0.7900 · 8초 0.8014로 전체(0.8097)와 차이가 없다.
+    청크 분할의 유일한 명분이 실측에서 성립하지 않았다.
+
+    `chunked=True`로 옛 동작을 부를 수 있다 — 비교 실험용으로만 남긴다.
     """
     import time
 
@@ -155,6 +257,10 @@ def protect_utterance(
 
     device = x.device
     model = MaskingModel(sample_rate, cfg.n_fft, cfg.hop_length, device=device)
+
+    if not chunked:
+        return _protect_whole(x, encoders, cfg, model, sample_rate,
+                              with_controls, progress)
 
     pieces, starts, chunk_len = split(x, sample_rate, chunk_sec, hop_sec)
     deltas: list[torch.Tensor] = []
@@ -200,34 +306,5 @@ def protect_utterance(
         total_sec=time.perf_counter() - t_total,
     )
 
-    # ── 평가 기준을 최적화 목표와 맞춘다 ──────────────────────────────────────
-    #
-    # channel_aware 섭동은 **깨끗한 파일에서 거의 무효**다. 그게 정상이다 —
-    # 표적을 "채널 통과본"으로 바꿨기 때문이다. 그런데 평가를 깨끗한 파일로 하면
-    # 리포트가 "잡음보다 못하다"고 말한다. 실측 예:
-    #
-    #   채널 인지 보호본   깨끗한 파일 0.9429  ←리포트가 실패로 읽던 값
-    #                     채널 통과 후 0.5915  ←실제 위협 모델에서의 성능
-    #
-    # 최적화 목표와 보고 기준이 다르면 도구가 자기 결과를 부정한다.
-    # 여기서는 **진짜 코덱**으로 평가한다. 최적화에 쓴 미분 가능 근사가 아니라.
-    if cfg.channel_aware:
-        from .codec import CHANNELS, telephone_channel
-        chan = CHANNELS["ulaw"]
-        heard = lambda w: telephone_channel(w, chan)   # noqa: E731
-        result.srs_basis = f"통화 채널 통과 후 ({chan.describe()})"
-    else:
-        heard = lambda w: w                            # noqa: E731
-        result.srs_basis = "파일 대 파일 (채널 없음)"
-
-    primary = encoders.encoders[0]
-    with torch.no_grad():
-        ref = primary(heard(x))
-        result.srs_protected = float(cosine_similarity(primary(heard(protected)), ref))
-
-        if with_controls:
-            for name, wav in make_controls(x, delta, cfg.target_snr_db).items():
-                result.srs_controls[name] = float(
-                    cosine_similarity(primary(heard(wav)), ref))
-
+    _evaluate(result, x, protected, delta, encoders, cfg, with_controls)
     return result

@@ -36,7 +36,7 @@ import websockets
 sys.path.insert(0, str(Path(__file__).parent))
 
 from mirinae.config import PGDConfig, SAMPLE_RATE, default_device
-from mirinae.encoder import SpeakerEncoder, cosine_similarity
+from mirinae.encoder import EncoderEnsemble, SpeakerEncoder, cosine_similarity
 from mirinae.pipeline import ProtectionResult
 from mirinae.mode1 import load_db
 from mirinae.mode1.scorer import CallState, Scorer
@@ -274,6 +274,104 @@ async def handle_mode2(ws, svc: Services, cfg: PGDConfig) -> None:
 
 # ── 진입점 ────────────────────────────────────────────────────────────────────
 
+async def handle_protect_full(ws, svc: Services, cfg: PGDConfig) -> None:
+    """발화 전체를 한 번에 보호한다 — 모드 2의 기본 경로.
+
+    **청크 스트리밍을 대체한다.** 예전에는 2초 청크를 받는 즉시 각각 최적화해
+    돌려줬다. 실시간처럼 보였지만 **방어가 성립하지 않았다.**
+
+    청크마다 자기 자신의 임베딩에서 멀어지므로 미는 방향이 제각각이고,
+    복제 모델이 파일 전체를 볼 때 서로 상쇄된다. 실사용 녹음 14초 실측
+    (60스텝 · SNR 20 dB · 같은 기준 · 통화채널 통과 후):
+
+        청크 스트리밍   SRS 0.8045   ← 판정 임계값 0.7962 위. 방어 실패
+        전체 발화 일괄  SRS 0.3709   ← 크게 아래. 성공. 게다가 13배 빠르다
+
+    발췌 공격 대비도 잃지 않는다 — 전체로 최적화한 뒤 2초만 잘라 봐도 0.8213으로
+    전체(0.8097)와 같다. 청크 분할의 유일한 명분이 실측에서 성립하지 않았다.
+
+    대가는 **녹음이 끝나야 시작할 수 있다는 것**이다. 통화 중 실시간 주입은
+    이 구조로 불가능하다. 되지도 않는 실시간을 흉내내는 것보다
+    되는 방어를 정직하게 제공하는 편이 낫다고 판단했다.
+
+    프로토콜
+      → {"mode":"protect"}
+      ← {"type":"ready","mode":"protect","steps":200}
+      → {"type":"audio","sample_rate":16000} + 바이너리 (발화 전체)
+      ← {"type":"progress","step":n,"total":N}   최적화 중 주기적으로
+      ← {"type":"done", srs·snr·가청도·판정}
+      ← 바이너리 (δ)
+    """
+    await ws.send(json.dumps({
+        "type": "ready", "mode": "protect",
+        "steps": cfg.steps, "sample_rate": SAMPLE_RATE,
+        "threshold": ProtectionResult.PROVISIONAL_THRESHOLD,
+    }))
+
+    loop = asyncio.get_running_loop()
+    pending: dict | None = None
+
+    async for message in ws:
+        if isinstance(message, str):
+            msg = json.loads(message)
+            if msg.get("type") == "stop":
+                break
+            if msg.get("type") == "audio":
+                pending = msg
+            continue
+
+        if pending is None:
+            continue
+        pending = None
+
+        audio = torch.from_numpy(decode_audio(message)).to(svc.device)
+        if audio.numel() < SAMPLE_RATE:
+            await ws.send(json.dumps({
+                "type": "error", "message": "녹음이 너무 짧다 (1초 미만)"}))
+            continue
+
+        # 진행률은 워커 스레드에서 올라온다. 이벤트 루프에 안전하게 넘긴다.
+        last_sent = 0.0
+
+        def on_step(done: int, total: int) -> None:
+            nonlocal last_sent
+            now = time.perf_counter()
+            if now - last_sent < 0.4 and done < total:
+                return                      # 너무 잦은 전송은 오히려 느려진다
+            last_sent = now
+            asyncio.run_coroutine_threadsafe(
+                ws.send(json.dumps({"type": "progress",
+                                    "step": done, "total": total})), loop)
+
+        out = await loop.run_in_executor(
+            None, lambda: _protect_whole_entry(audio, svc, cfg, on_step))
+
+        await ws.send(json.dumps({
+            "type": "done",
+            "srs": out.srs_protected,
+            "srs_basis": out.srs_basis,
+            "snr_db": out.global_snr_db,
+            "elapsed": out.total_sec,
+            "audible_violation": (out.audibility_abs or out.audibility).violation_ratio,
+            "below_threshold": out.srs_protected
+            < ProtectionResult.PROVISIONAL_THRESHOLD,
+        }))
+        await ws.send(out.delta.detach().cpu().numpy().astype("<f4").tobytes())
+
+
+def _protect_whole_entry(audio, svc, cfg, on_step):
+    """`_protect_whole`을 서버에서 부르기 위한 얇은 래퍼.
+
+    진행률 콜백을 넘겨야 해서 `protect_utterance`를 거치지 않는다 —
+    그쪽은 콜백 인자를 노출하지 않는다.
+    """
+    from mirinae.pipeline import _protect_whole
+
+    return _protect_whole(audio, EncoderEnsemble([svc.encoder]), cfg,
+                          svc.masking, SAMPLE_RATE,
+                          with_controls=False, progress=False, on_step=on_step)
+
+
 async def handle_compare(ws, svc: Services) -> None:
     """복제음 유사도 비교 — 방어가 실제로 통했는지 사용자가 직접 확인하는 경로.
 
@@ -361,6 +459,8 @@ async def handler(ws, svc: Services, cfg: PGDConfig) -> None:
 
         if mode == "mode2":
             await handle_mode2(ws, svc, cfg)
+        elif mode == "protect":
+            await handle_protect_full(ws, svc, cfg)
         elif mode == "compare":
             await handle_compare(ws, svc)
         else:
