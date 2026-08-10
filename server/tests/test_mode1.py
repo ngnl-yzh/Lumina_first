@@ -51,9 +51,9 @@ def test_db_matches_design_doc_counts(db):
     검증셋 2차에서 3항을 더 더했다 — 메신저피싱의 신분증·카드 사진 요구(S5),
     릴레이 사기 1단계의 "끊지 마시고"(S4). 둘 다 실제 수법인데 비어 있었다.
     """
-    assert db.n_base == 92, f"기본 표현 {db.n_base}개"
-    assert db.n_variants == 175, f"변형 {db.n_variants}개"
-    assert db.n_total == 267, f"합계 {db.n_total}개"
+    assert db.n_base == 99, f"기본 표현 {db.n_base}개"
+    assert db.n_variants == 205, f"변형 {db.n_variants}개"
+    assert db.n_total == 304, f"합계 {db.n_total}개"
 
 
 def test_stage_weights_match_doc(db):
@@ -71,7 +71,7 @@ def test_route_denominators_match_doc():
 
 
 def test_db_has_all_criticals_and_pairs(db):
-    assert [c.id for c in db.criticals] == ["C1", "C2", "C3", "C4", "C5"]
+    assert [c.id for c in db.criticals] == ["C1", "C2", "C3", "C4", "C5", "C6"]
     assert [p.id for p in db.pairs] == ["P1", "P2", "P3", "P4"]
 
 
@@ -597,3 +597,48 @@ def test_honorific_direction_separates_scam_from_normal(scorer):
     assert scam.hits["S5"] > 0 and normal.hits["S5"] > 0
     assert scam.specific["S5"] is True
     assert normal.specific["S5"] is False
+
+
+# ── 서술 맥락 (검증셋 3차) ────────────────────────────────────────────────────
+
+def test_descriptive_context_spares_fraud_warning_broadcast(scorer):
+    """은행 ARS의 보이스피싱 경고 안내를 사기로 보면 안 된다.
+
+    수법을 3인칭으로 나열하므로 인용 어미가 없다. 그래서 인용 판정이
+    걸러내지 못했고 C1·C5가 발동해 0.750 위험이 됐다(T-B-02).
+    """
+    state = CallState(scorer)
+    for line in [
+        "우리은행 안내입니다.",
+        "검찰이나 금감원을 사칭해 안전계좌로 이체를 요구하는 전화가 있습니다.",
+        "가족에게 말하지 말라거나 원격제어 앱 설치를 요구하면 사기입니다.",
+        "의심되시면 112나 1332로 신고해 주세요.",
+    ]:
+        r = state.add_utterance(line)
+    assert r.level == "안전", r.why()
+
+
+def test_descriptive_markers_are_narrow_enough_to_resist_evasion(scorer):
+    """'사기'라는 단어를 흘리는 것만으로 억제가 켜지면 안 된다.
+
+    "요즘 사기가 많으니 안전계좌로 옮기세요"가 통과되면 그 자체가 회피로다.
+    그래서 서술 **서술어** 형태만 표지로 인정한다.
+    """
+    r = scorer.score("요즘 사기가 많으니 지금 바로 안전계좌로 옮기세요")
+    assert "C1" in r.criticals, r.why()
+    assert r.level == "위험", r.why()
+
+
+def test_disclaimer_evasion_does_not_erase_the_call(scorer):
+    """고지 문구를 붙여 자기 키워드를 지우려는 회피는 통하지 않는다.
+
+    억제는 **문장 단위**다. 다른 문장의 지시는 그대로 남는다(T-F-01·02).
+    """
+    state = CallState(scorer)
+    for line in [
+        "금융감독원입니다. 저희는 전화로 계좌번호를 묻지 않습니다.",
+        "국고 계좌로 자금을 이관하십시오. 저희는 절대 개인정보를 묻지 않습니다.",
+        "수사 기밀이니 발설하지 마십시오. 저희는 비밀 유지를 요구하지 않습니다.",
+    ]:
+        r = state.add_utterance(line)
+    assert r.level == "위험", r.why()

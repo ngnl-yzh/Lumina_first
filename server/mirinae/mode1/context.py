@@ -97,11 +97,36 @@ DISCLAIMER_MARKERS: tuple[str, ...] = (
 DISCLAIMER_WINDOW = 24
 
 
+# ── 서술 맥락 ─────────────────────────────────────────────────────────────────
+#
+# "검찰이나 금감원을 **사칭해** 안전계좌로 이체를 요구하는 전화가 있습니다"
+# "가족에게 말하지 말라거나 원격제어 앱 설치를 요구하면 **사기입니다**"
+#
+# 은행 ARS의 보이스피싱 경고 안내다. 사기 수법을 3인칭으로 서술한다.
+# 인용 어미가 없어서 인용 판정이 걸러내지 못했고, C1·C5가 발동해
+# **0.750 위험**이 됐다. 사기를 막으려는 안내를 사기로 판정한 것이다.
+# 검증셋 3차(T-B-02)가 잡아냈다.
+#
+# 인용·고지와 같은 계열이다 — 화자가 그 행위를 **남의 것으로 서술**하고 있으므로
+# 지시가 아니다. 다만 위치가 다르다. 인용 어미는 매칭 뒤에 붙지만
+# 서술 표지는 문장 어디에나 올 수 있어서 **문장 전체**를 본다.
+#
+# 표지를 좁게 잡은 이유가 있다. "요즘 사기가 많으니 안전계좌로 옮기세요"처럼
+# 사기범이 '사기'라는 단어만 흘려도 억제가 켜지면 그 자체가 회피로다.
+# 그래서 **서술 서술어 형태**만 인정한다 — 사기범은 자기 지시를 두고
+# "이것은 사기입니다"라고 말하지 않는다.
+DESCRIPTIVE_MARKERS: tuple[str, ...] = (
+    "사칭해", "사칭하는", "사칭한", "사칭했",
+    "사기입니다", "사기예요", "사기죠", "사기라고", "사기수법",
+    "보이스피싱입니다", "피싱입니다", "수법입니다", "수법이에요",
+)
+
+
 @dataclass(frozen=True)
 class ContextVerdict:
     """매칭 하나에 대한 문맥 판정."""
 
-    kind: str            # "direct" | "quoted" | "disclaimer"
+    kind: str            # "direct" | "quoted" | "disclaimer" | "descriptive"
     marker: str = ""     # 판정 근거가 된 어미
     evidence: str = ""   # 실제로 본 뒤쪽 구간
 
@@ -115,6 +140,8 @@ class ContextVerdict:
             return f"인용 어미 '{self.marker}' — 남의 말을 옮긴 것으로 판단"
         if self.kind == "disclaimer":
             return f"기관 고지 '{self.marker}' — 하지 않는다고 선언한 문장"
+        if self.kind == "descriptive":
+            return f"서술 표지 '{self.marker}' — 수법을 남의 것으로 설명한 문장"
         return "직접 발화"
 
 
@@ -145,6 +172,10 @@ def classify(sentence: str, span: MatchSpan) -> ContextVerdict:
     for marker in DISCLAIMER_MARKERS:
         if marker in wide:
             return ContextVerdict("disclaimer", marker=marker, evidence=wide)
+
+    for marker in DESCRIPTIVE_MARKERS:
+        if marker in norm:
+            return ContextVerdict("descriptive", marker=marker, evidence=norm[:40])
     return DIRECT
 
 
