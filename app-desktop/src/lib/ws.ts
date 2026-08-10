@@ -35,13 +35,16 @@ export type ServerMessage =
   | { type: "chunk"; seq: number; srs: number; snr_db: number; steps: number;
       degraded: boolean; elapsed: number }
   | { type: "done"; [k: string]: unknown }
+  // 복제 검증 — 사용자가 외부 서비스에서 만든 복제음을 넣어 유사도를 잰다
+  | { type: "reference_ok"; duration: number }
+  | { type: "result"; label: string; id: number; srs: number; duration: number }
   | { type: "error"; message: string };
 
 export type ConnState = "disconnected" | "connecting" | "connected" | "error";
 
 export interface ClientOptions {
   url: string;
-  mode: "mode1" | "mode2";
+  mode: "mode1" | "mode2" | "compare";
   onMessage: (msg: ServerMessage) => void;
   /** 모드 2에서 서버가 돌려준 섭동 δ. 직전 chunk 헤더의 순번에 대응한다. */
   onBinary?: (seq: number, delta: Float32Array) => void;
@@ -110,6 +113,20 @@ export class StreamClient {
         if (this.state !== "error") this.setState("disconnected");
       };
     });
+  }
+
+  /**
+   * 메타 JSON을 먼저 보내고 이어서 오디오를 보낸다 — 복제 검증에서 쓴다.
+   *
+   * 서버는 직전 JSON을 다음 바이너리의 메타로 해석하므로 **순서가 중요하다.**
+   * 두 번을 따로 보내면 그 사이에 다른 전송이 끼어들 수 있어 한 메서드로 묶었다.
+   */
+  sendLabeledAudio(meta: Record<string, unknown>, pcm: Float32Array): void {
+    if (this.ws?.readyState !== WebSocket.OPEN) return;
+    this.ws.send(JSON.stringify(meta));
+    const buf = new ArrayBuffer(pcm.length * 4);
+    new Float32Array(buf).set(pcm);
+    this.ws.send(buf);
   }
 
   sendAudio(pcm: Float32Array, seq?: number): void {

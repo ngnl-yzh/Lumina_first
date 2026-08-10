@@ -15,6 +15,59 @@ const CHUNK_COLOR: Record<ChunkState, string> = {
 const CHUNK_SAMPLES = TARGET_SAMPLE_RATE * 2;
 const HOP_SAMPLES = TARGET_SAMPLE_RATE * 1;
 
+/**
+ * C-B 대조군 — 섭동과 **같은 세기**의 통화대역 잡음을 섞은 음성.
+ *
+ * 복제 검증에서 이것 없이는 "그냥 잡음 아니냐"에 답할 수 없다.
+ * 세기를 섭동과 정확히 맞추는 것이 핵심이다 — 잡음을 더 크게 넣고 이겼다고 하면
+ * 아무 의미가 없다. 그래서 δ의 RMS를 그대로 목표로 삼는다.
+ *
+ * 대역 제한은 300~3400 Hz 1차 근사(고역·저역 통과 각 1단)로 한다.
+ * 서버의 `controls.bandlimited_noise`만큼 가파르지는 않지만,
+ * 이 파일의 용도는 **복제 서비스에 올릴 비교 대상**이므로 그 정도면 충분하다.
+ * 정밀 측정은 서버가 만든 `control_C-B.wav`를 쓴다.
+ */
+function bandNoiseMix(original: Float32Array, protectedPcm: Float32Array): Float32Array {
+  const n = Math.min(original.length, protectedPcm.length);
+  let deltaSq = 0;
+  for (let i = 0; i < n; i++) {
+    const d = protectedPcm[i] - original[i];
+    deltaSq += d * d;
+  }
+  const targetRms = Math.sqrt(deltaSq / Math.max(n, 1));
+
+  // 백색잡음 → 대역 제한 (단순 1차 IIR 두 단)
+  const noise = new Float32Array(n);
+  for (let i = 0; i < n; i++) noise[i] = Math.random() * 2 - 1;
+
+  const dt = 1 / TARGET_SAMPLE_RATE;
+  const hpRc = 1 / (2 * Math.PI * 300);
+  const hpA = hpRc / (hpRc + dt);
+  let prevIn = 0, prevOut = 0;
+  for (let i = 0; i < n; i++) {
+    const out = hpA * (prevOut + noise[i] - prevIn);
+    prevIn = noise[i];
+    prevOut = out;
+    noise[i] = out;
+  }
+  const lpRc = 1 / (2 * Math.PI * 3400);
+  const lpA = dt / (lpRc + dt);
+  let acc = 0;
+  for (let i = 0; i < n; i++) {
+    acc += lpA * (noise[i] - acc);
+    noise[i] = acc;
+  }
+
+  let sq = 0;
+  for (let i = 0; i < n; i++) sq += noise[i] * noise[i];
+  const rms = Math.sqrt(sq / Math.max(n, 1)) || 1;
+  const g = targetRms / rms;
+
+  const out = new Float32Array(n);
+  for (let i = 0; i < n; i++) out[i] = original[i] + noise[i] * g;
+  return out;
+}
+
 export default function Mode2({
   settings,
   onConn,
@@ -33,7 +86,8 @@ export default function Mode2({
   const [degraded, setDegraded] = useState(0);
   const [secs, setSecs] = useState(0);
   const [level, setLevel] = useState(0);
-  const [urls, setUrls] = useState<{ original: string; protected: string } | null>(null);
+  const [urls, setUrls] = useState<
+    { original: string; protected: string; control: string } | null>(null);
   const [log, setLog] = useState<string[]>([]);
 
   const recRef = useRef<MicRecorder | null>(null);
@@ -69,6 +123,8 @@ export default function Mode2({
     setUrls({
       original: URL.createObjectURL(encodeWav(original, TARGET_SAMPLE_RATE)),
       protected: URL.createObjectURL(encodeWav(prot, TARGET_SAMPLE_RATE)),
+      control: URL.createObjectURL(
+        encodeWav(bandNoiseMix(original, prot), TARGET_SAMPLE_RATE)),
     });
     setFinished(true);
     addLog(`조립 완료 · 청크 ${adderRef.current.count}개 · ${(total / TARGET_SAMPLE_RATE).toFixed(1)}초`);
@@ -289,7 +345,7 @@ export default function Mode2({
               <button className="btn btn-dark" onClick={() => play(urls.original)}>▶ 원본</button>
               <button className="btn btn-mode2" onClick={() => play(urls.protected)}>▶ 보호본</button>
             </div>
-            <div style={{ display: "flex", gap: 8 }}>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
               <button className="btn btn-ghost" onClick={() => download(urls.original, "원본.wav")}>
                 원본 저장
               </button>
@@ -299,9 +355,20 @@ export default function Mode2({
               >
                 보호본 저장
               </button>
+              <button
+                className="btn btn-ghost"
+                onClick={() => download(urls.control, "대조군_잡음.wav")}
+              >
+                대조군 저장
+              </button>
             </div>
             <p className="small" style={{ marginTop: 10 }}>
-              저장한 보호본은 <span className="mono">clone_test.py</span>로 복제 검증에 바로 쓸 수 있습니다.
+              세 파일을 각각 복제 서비스에 올려 같은 문장을 생성한 뒤,
+              <strong> 복제 검증</strong> 탭에 넣으면 유사도를 비교해 드립니다.
+            </p>
+            <p className="small" style={{ marginTop: 6 }}>
+              대조군은 섭동과 <strong>같은 세기</strong>의 통화대역 잡음입니다.
+              이게 없으면 “그냥 잡음 아니냐”에 답할 수 없습니다.
             </p>
           </div>
         )}

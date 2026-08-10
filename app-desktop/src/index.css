@@ -463,3 +463,76 @@ h1.page {
   overflow-y: auto;
   white-space: pre-wrap;
 }
+
+/* ── 복제 검증 화면 ────────────────────────────────────────────────────────
+   모드 1·2는 좌우 분할(.split)이지만 이 화면은 표가 넓어야 읽힌다.
+   조건 6개 × 열 6개라 380px 컬럼에 넣으면 숫자가 줄바꿈된다. */
+.pane-wide {
+  max-width: 980px;
+  margin: 0 auto;
+  padding: 18px 24px 24px;
+}
+
+.verify-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.verify-table th,
+.verify-table td {
+  padding: 7px 10px;
+  text-align: left;
+  border-bottom: 1px solid var(--rule);
+}
+
+.verify-table th {
+  font-weight: 600;
+  color: var(--ink-2);
+  font-size: 12px;
+  border-bottom: 1px solid var(--ink-3);
+}
+
+.verify-table td:nth-child(n + 2),
+.verify-table th:nth-child(n + 2) {
+  text-align: right;
+}
+
+.verify-table td:first-child,
+.verify-table th:first-child {
+  text-align: left;
+}
+
+/* 보호본 행 — 이 표에서 눈이 먼저 가야 하는 줄이다 */
+.verify-table tr[data-key] td {
+  background: #f7f6fb;
+  font-weight: 600;
+}
+
+.verify-table select {
+  font: inherit;
+  padding: 3px 6px;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--ink);
+}
+
+/* 판정 한 줄 — 결과 표 아래에서 "그래서 뭐냐"에 답한다 */
+.verdict {
+  margin: 6px 0;
+  padding: 9px 12px;
+  border-radius: 8px;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.verdict-ok {
+  background: #eef6f1;
+  border-left: 3px solid var(--safe);
+}
+
+.verdict-bad {
+  background: #fbeef2;
+  border-left: 3px solid var(--gap);
+}

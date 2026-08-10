@@ -2,6 +2,7 @@ import { useCallback, useState } from "react";
 import Mode1 from "./Mode1";
 import Mode2 from "./Mode2";
 import Settings from "./Settings";
+import Verify from "./Verify";
 import { loadSettings, saveSettings, type AppSettings, type ConnState, type Tab } from "./types";
 
 /**
@@ -19,12 +20,14 @@ import { loadSettings, saveSettings, type AppSettings, type ConnState, type Tab 
 const TAB_COLOR: Record<Tab, string> = {
   mode1: "#0D7A85",
   mode2: "#5E5A94",
+  verify: "#4A5568",
   settings: "#14202B",
 };
 
 const TABS: Array<{ id: Tab; label: string }> = [
   { id: "mode1", label: "보이스피싱 감지" },
   { id: "mode2", label: "딥보이스 방지" },
+  { id: "verify", label: "복제 검증" },
   { id: "settings", label: "설정" },
 ];
 
@@ -86,6 +89,7 @@ export default function App() {
       {/* 쓰지 않는 모드는 언마운트한다. 숨기기만 하면 마이크와 소켓이 계속 살아 있다. */}
       {tab === "mode1" && <Mode1 settings={settings} onConn={setConn} />}
       {tab === "mode2" && <Mode2 settings={settings} onConn={setConn} />}
+      {tab === "verify" && <Verify settings={settings} onConn={setConn} />}
       {tab === "settings" && (
         <Settings settings={settings} conn={conn} onSave={onSave} onConn={setConn} />
       )}

@@ -36,7 +36,8 @@ import websockets
 sys.path.insert(0, str(Path(__file__).parent))
 
 from mirinae.config import PGDConfig, SAMPLE_RATE, default_device
-from mirinae.encoder import SpeakerEncoder
+from mirinae.encoder import SpeakerEncoder, cosine_similarity
+from mirinae.pipeline import ProtectionResult
 from mirinae.mode1 import load_db
 from mirinae.mode1.scorer import CallState, Scorer
 from mirinae.mode1.segmenter import StreamingVAD
@@ -273,6 +274,82 @@ async def handle_mode2(ws, svc: Services, cfg: PGDConfig) -> None:
 
 # ── 진입점 ────────────────────────────────────────────────────────────────────
 
+async def handle_compare(ws, svc: Services) -> None:
+    """복제음 유사도 비교 — 방어가 실제로 통했는지 사용자가 직접 확인하는 경로.
+
+    **복제 모델을 우리 파이프라인에 넣지 않는다.** 사용자가 F5-TTS든 ElevenLabs든
+    원하는 서비스에 원본과 보호본을 각각 올려 복제음을 만들고, 그 결과물을 여기 넣는다.
+
+    그렇게 하는 이유가 셋이다.
+      ① 모델을 붙일 때마다 러너를 새로 쓰지 않아도 된다
+      ② 상용 서비스까지 같은 방식으로 검증할 수 있다
+      ③ 시연에서 "우리 도구로 우리가 검증했다"가 아니라
+         "제3자 서비스에 실제로 넣어봤다"가 된다 — 반박하기 훨씬 어렵다
+
+    프로토콜
+      → {"mode":"compare"}
+      ← {"type":"ready","mode":"compare","threshold":0.7962}
+      → {"type":"reference"} + 바이너리        기준 음성(원본)
+      ← {"type":"reference_ok","duration":8.0}
+      → {"type":"sample","label":"보호본","id":0} + 바이너리
+      ← {"type":"result","label":"보호본","id":0,"srs":0.91}
+      → {"type":"stop"}
+    """
+    await ws.send(json.dumps({
+        "type": "ready", "mode": "compare",
+        "threshold": ProtectionResult.PROVISIONAL_THRESHOLD,
+    }))
+
+    loop = asyncio.get_running_loop()
+    ref_emb = None
+    pending: dict | None = None
+
+    async for message in ws:
+        if isinstance(message, str):
+            msg = json.loads(message)
+            kind = msg.get("type")
+            if kind == "stop":
+                break
+            if kind in ("reference", "sample"):
+                pending = msg          # 다음 바이너리가 이 메타에 해당한다
+            continue
+
+        if pending is None:
+            continue
+        audio = decode_audio(message)
+        meta, pending = pending, None
+
+        def embed(a=audio):
+            with torch.no_grad():
+                return svc.encoder(torch.from_numpy(a).to(svc.device))
+
+        emb = await loop.run_in_executor(None, embed)
+
+        if meta["type"] == "reference":
+            ref_emb = emb
+            await ws.send(json.dumps({
+                "type": "reference_ok",
+                "duration": round(len(audio) / SAMPLE_RATE, 2),
+            }))
+            continue
+
+        if ref_emb is None:
+            await ws.send(json.dumps({
+                "type": "error", "message": "기준 음성을 먼저 보내야 한다",
+            }))
+            continue
+
+        with torch.no_grad():
+            srs = float(cosine_similarity(emb, ref_emb))
+        await ws.send(json.dumps({
+            "type": "result",
+            "label": meta.get("label", ""),
+            "id": meta.get("id", 0),
+            "srs": srs,
+            "duration": round(len(audio) / SAMPLE_RATE, 2),
+        }))
+
+
 async def handler(ws, svc: Services, cfg: PGDConfig) -> None:
     peer = getattr(ws, "remote_address", None)
     print(f"[접속] {peer}", flush=True)
@@ -284,6 +361,8 @@ async def handler(ws, svc: Services, cfg: PGDConfig) -> None:
 
         if mode == "mode2":
             await handle_mode2(ws, svc, cfg)
+        elif mode == "compare":
+            await handle_compare(ws, svc)
         else:
             await handle_mode1(ws, svc)
     except websockets.exceptions.ConnectionClosed:

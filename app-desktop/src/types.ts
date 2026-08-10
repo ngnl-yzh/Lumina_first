@@ -1,4 +1,4 @@
-export type Tab = "mode1" | "mode2" | "settings";
+export type Tab = "mode1" | "mode2" | "verify" | "settings";
 export type ConnState = "disconnected" | "connecting" | "connected" | "error";
 
 export interface AppSettings {
