@@ -51,9 +51,9 @@ def test_db_matches_design_doc_counts(db):
     검증셋 2차에서 3항을 더 더했다 — 메신저피싱의 신분증·카드 사진 요구(S5),
     릴레이 사기 1단계의 "끊지 마시고"(S4). 둘 다 실제 수법인데 비어 있었다.
     """
-    assert db.n_base == 102, f"기본 표현 {db.n_base}개"
-    assert db.n_variants == 216, f"변형 {db.n_variants}개"
-    assert db.n_total == 318, f"합계 {db.n_total}개"
+    assert db.n_base == 104, f"기본 표현 {db.n_base}개"
+    assert db.n_variants == 223, f"변형 {db.n_variants}개"
+    assert db.n_total == 327, f"합계 {db.n_total}개"
 
 
 def test_stage_weights_match_doc(db):
@@ -779,3 +779,40 @@ def test_mentioning_a_public_office_is_not_impersonating_one(scorer):
     ]:
         r = state.add_utterance(line)
     assert r.level == "안전", r.why()
+
+
+# ── 검증셋 6차 ────────────────────────────────────────────────────────────────
+
+def test_conjunction_does_not_trigger_quote_suppression(scorer):
+    """접속부사 "그래서"가 인용 억제를 켜면 안 된다.
+
+    구어체 인용 어미를 넓히면서 '래서'를 넣었더니 "그래서"에 그대로 들어 있어,
+    지시 뒤에 접속부사만 붙이면 억제가 켜졌다(X-F-01·02).
+
+    억제 목록에 흔한 말이 섞이면 그 자체가 회피로다 — 세 번째 겪은 일이다.
+    """
+    state = CallState(scorer)
+    for line in [
+        "서울중앙지검 수사관입니다.",
+        "안전계좌로 이체하셔야 합니다 그래서 지금 바로 진행하겠습니다.",
+        "가족에게도 말하지 마십시오 그래서 조용한 곳으로 가 주세요.",
+    ]:
+        r = state.add_utterance(line)
+    assert r.level == "위험", r.why()
+
+
+def test_long_call_does_not_dilute_evidence(scorer):
+    """정상 대화 열다섯 마디 뒤에 본론이 와도 잡아야 한다(X-F-04).
+
+    증거는 누적되므로 앞에 무엇이 오든 뒤의 신호가 지워지지 않는다.
+    반대로 긴 통화 자체가 위험 신호가 되어서도 안 된다 — X-B-12가 그 대조군이다.
+    """
+    state = CallState(scorer)
+    for _ in range(15):
+        state.add_utterance("날씨가 많이 더워졌습니다. 건강은 어떠신지요.")
+    for line in [
+        "수사 기밀이라 주변에 알리지 마시고 조용한 곳으로 이동해 주세요.",
+        "자산 검수를 위해 제가 안내드리는 계좌로 잔액을 옮겨 두십시오.",
+    ]:
+        r = state.add_utterance(line)
+    assert r.level == "위험", r.why()
