@@ -36,6 +36,42 @@ from mirinae.encoder import SpeakerEncoder, cosine_similarity
 XTTS_PYTHON = Path(__file__).parent / ".venv-xtts" / "Scripts" / "python.exe"
 XTTS_SCRIPT = Path(__file__).parent / "clone_xtts.py"
 
+# 복제 모델 — 각각 격리 venv에서 돈다.
+#
+# **모델을 하나만 쓰면 결론의 일반성을 알 수 없다.**
+# XTTS에서 "보호본도 복제된다"가 나왔는데, 그것만으로는
+#   ① XTTS 특유의 성질이라 다른 모델에는 통할지도 모른다
+#   ② 임베딩 표적 방어 자체의 구조적 한계다
+# 를 구별할 수 없다.
+#
+# F5-TTS는 XTTS와 구조가 완전히 다르다 — XTTS는 GPT 계열 자기회귀 + HiFi-GAN,
+# F5-TTS는 flow matching이고 화자 조건 경로도 다르다.
+# 둘에서 같은 결과가 나오면 ②가 지지된다.
+CLONERS: dict[str, dict] = {
+    "xtts": {
+        "venv": Path(__file__).parent / ".venv-xtts" / "Scripts" / "python.exe",
+        "script": Path(__file__).parent / "clone_xtts.py",
+        "name": "XTTS-v2 (GPT + HiFi-GAN)",
+        "setup": [
+            "py -3.11 -m venv .venv-xtts",
+            ".venv-xtts\\Scripts\\python -m pip install -r requirements-xtts.txt",
+        ],
+        "lang_flag": True,
+    },
+    "f5": {
+        "venv": Path(__file__).parent / ".venv-f5" / "Scripts" / "python.exe",
+        "script": Path(__file__).parent / "clone_f5.py",
+        "name": "F5-TTS (flow matching)",
+        "setup": [
+            "py -3.11 -m venv .venv-f5",
+            ".venv-f5\\Scripts\\python -m pip install torch torchaudio "
+            "--index-url https://download.pytorch.org/whl/cu121",
+            ".venv-f5\\Scripts\\python -m pip install f5-tts",
+        ],
+        "lang_flag": False,
+    },
+}
+
 
 def mean_ci(values: list[float], z: float = 1.96) -> tuple[float, float, float]:
     """평균과 95% 신뢰구간 반폭.
@@ -59,39 +95,57 @@ def mean_ci(values: list[float], z: float = 1.96) -> tuple[float, float, float]:
     return (m, sd, half)
 
 
-def run_xtts(reference: Path, output: Path, text: str, language: str) -> bool:
-    """격리 venv에서 XTTS를 돌린다."""
-    if not XTTS_PYTHON.exists():
-        print(f"XTTS venv 없음: {XTTS_PYTHON}", file=sys.stderr)
-        print("  py -3.11 -m venv .venv-xtts", file=sys.stderr)
-        print("  .venv-xtts\\Scripts\\python -m pip install coqui-tts", file=sys.stderr)
+def run_cloner(model: str, reference: Path, output: Path,
+               text: str, language: str) -> bool:
+    """격리 venv에서 복제 모델을 돌린다."""
+    spec = CLONERS[model]
+    venv: Path = spec["venv"]
+    if not venv.exists():
+        print(f"{spec['name']} venv 없음: {venv}", file=sys.stderr)
+        for line in spec["setup"]:
+            print(f"  {line}", file=sys.stderr)
         return False
 
-    proc = subprocess.run(
-        [str(XTTS_PYTHON), str(XTTS_SCRIPT), str(reference), str(output),
-         "--text", text, "--language", language],
-        capture_output=True, text=True, encoding="utf-8", errors="replace",
-    )
+    cmd = [str(venv), str(spec["script"]), str(reference), str(output), "--text", text]
+    if spec["lang_flag"]:
+        cmd += ["--language", language]
+
+    proc = subprocess.run(cmd, capture_output=True, text=True,
+                          encoding="utf-8", errors="replace")
     if proc.returncode != 0:
-        print(f"XTTS 실패 (exit {proc.returncode})", file=sys.stderr)
-        print(proc.stdout[-2000:], file=sys.stderr)
-        print(proc.stderr[-2000:], file=sys.stderr)
+        print(f"{spec['name']} 실패 (exit {proc.returncode})", file=sys.stderr)
+        print((proc.stdout or "")[-2000:], file=sys.stderr)
+        print((proc.stderr or "")[-2000:], file=sys.stderr)
         return False
     return True
 
 
+def run_xtts(reference: Path, output: Path, text: str, language: str) -> bool:
+    """하위 호환 — 예전 호출부가 남아 있을 수 있다."""
+    return run_cloner("xtts", reference, output, text, language)
+
+
 def main() -> int:
-    p = argparse.ArgumentParser(description="미리내 · XTTS-v2 복제 실패 검증")
+    p = argparse.ArgumentParser(description="미리내 · 복제 실패 검증")
     p.add_argument("original", help="원본 WAV")
     p.add_argument("protected", help="보호본 WAV")
     p.add_argument("--controls", help="대조군 WAV가 있는 폴더 (control_*.wav)")
+    p.add_argument("--model", default="xtts", choices=list(CLONERS),
+                   help="복제 모델. 구조가 다른 모델에서도 같은 결과가 나와야 "
+                        "'임베딩 표적 방어의 한계'를 주장할 수 있다")
     p.add_argument("--text", default="엄마, 나 사고 났어. 지금 급하게 돈이 필요해.")
     p.add_argument("--language", default="ko")
-    p.add_argument("-o", "--out", default="out/clone", help="복제음 출력 폴더")
+    p.add_argument("-o", "--out", default=None, help="복제음 출력 폴더")
     p.add_argument("--repeat", type=int, default=1,
-                   help="조건마다 몇 번 복제할지. XTTS 생성이 확률적이라 "
+                   help="조건마다 몇 번 복제할지. 생성이 확률적이라 "
                         "n=1로는 효과와 노이즈를 구별할 수 없다. 최소 5 권장")
     args = p.parse_args()
+
+    model = args.model
+    spec = CLONERS[model]
+    # 모델마다 다른 폴더에 넣는다. 섞이면 어느 모델 결과인지 알 수 없게 된다.
+    if args.out is None:
+        args.out = f"out/clone_{model}"
 
     from protect import load_wav
 
@@ -108,18 +162,20 @@ def main() -> int:
         for wav in sorted(Path(args.controls).glob("control_*.wav")):
             targets.append((wav.stem.replace("control_", ""), wav))
 
+    print(f"복제 모델: {spec['name']}")
     print(f"복제 문장: “{args.text}”")
     print(f"대상 {len(targets)}개 · 조건당 {args.repeat}회 복제\n")
     if args.repeat < 3:
-        print("  ※ n<3이면 XTTS 생성 편차와 방어 효과를 구별할 수 없다. --repeat 5 권장\n")
+        print("  ※ n<3이면 생성 편차와 방어 효과를 구별할 수 없다. --repeat 5 권장\n")
 
     clones: dict[str, list[Path]] = {}
     for label, ref in targets:
         paths = []
         for k in range(args.repeat):
             dst = out / f"clone_from_{ref.stem}_{k}.wav"
-            print(f"[{label}] {ref.name} → XTTS 복제 {k + 1}/{args.repeat}...", flush=True)
-            if not run_xtts(ref, dst, args.text, args.language):
+            print(f"[{label}] {ref.name} → {model} 복제 {k + 1}/{args.repeat}...",
+                  flush=True)
+            if not run_cloner(model, ref, dst, args.text, args.language):
                 return 1
             paths.append(dst)
         clones[label] = paths
@@ -200,6 +256,8 @@ def main() -> int:
     print(f"  {detail}")
 
     (out / "clone_report.json").write_text(json.dumps({
+        "model": model,
+        "model_name": spec["name"],
         "text": args.text,
         "language": args.language,
         "repeat": args.repeat,
