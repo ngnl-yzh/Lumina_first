@@ -51,9 +51,9 @@ def test_db_matches_design_doc_counts(db):
     검증셋 2차에서 3항을 더 더했다 — 메신저피싱의 신분증·카드 사진 요구(S5),
     릴레이 사기 1단계의 "끊지 마시고"(S4). 둘 다 실제 수법인데 비어 있었다.
     """
-    assert db.n_base == 101, f"기본 표현 {db.n_base}개"
-    assert db.n_variants == 215, f"변형 {db.n_variants}개"
-    assert db.n_total == 316, f"합계 {db.n_total}개"
+    assert db.n_base == 99, f"기본 표현 {db.n_base}개"
+    assert db.n_variants == 205, f"변형 {db.n_variants}개"
+    assert db.n_total == 304, f"합계 {db.n_total}개"
 
 
 def test_stage_weights_match_doc(db):
@@ -666,6 +666,62 @@ def test_honorific_particle_isolation_is_caught(scorer):
 
     기존 S4 표현은 전부 '말하지'만 있고 '알리지'가 없었으며,
     높임 조사 '께'도 빠져 있었다(Q-F-08).
+    지금은 열거가 아니라 형태 규칙(M-S4-함구)이 잡는다.
     """
     r = scorer.score("부모님께는 알리지 마세요. 본인 명의 건이라 그렇습니다.")
     assert r.stage_hits["S4"] > 0, r.why()
+
+
+# ── 형태 규칙 ─────────────────────────────────────────────────────────────────
+
+@pytest.mark.parametrize("text", [
+    "사모님께 언급하지 마세요",
+    "아드님한테도 밝히지 마십시오",
+    "과장님보고 이야기하지 말고",
+    "며느리에게만 전달하지 마세요",
+    "옆집 아저씨에게는 알려주지 마",
+    "이모한테 얘기하지 않으셔야 합니다",
+])
+def test_silence_rule_generalizes_to_unlisted_forms(scorer, text):
+    """DB에 한 번도 적지 않은 표면형도 잡아야 한다.
+
+    형태 규칙의 주장은 "표현을 나열하지 않아도 잡는다"이고,
+    그 주장은 **적지 않은 형태**로만 검증된다.
+    호칭은 무한하므로 열린 자리로 두고 조사·어간·어미로만 잡는다.
+    """
+    assert scorer.extract(text).hits["S4"] > 0, text
+
+
+@pytest.mark.parametrize("text", [
+    "친구한테는 말했지만 다른 사람에겐 안 했어",
+    "동생에게 말하지 그랬어",
+    "어머님께 이 소식을 알려 드리세요",
+    "과장님께 보고하지 않으면 문제가 됩니다",
+    "고객에게 안내하지 못한 부분은 죄송합니다",
+])
+def test_silence_rule_requires_actual_prohibition(scorer, text):
+    """부정 어미가 금지가 아니면 걸리면 안 된다.
+
+    열거본("한테는 말하지")은 근사매칭에 기대는 탓에
+    "친구한테는 말했지만"을 자모 거리 2로 잡았다.
+    형태 규칙은 '-지 마/말/않'을 명시적으로 요구해 이걸 가른다.
+    """
+    assert scorer.extract(text).hits["S4"] == 0, text
+
+
+@pytest.mark.parametrize("text,expected", [
+    ("제가 지금 알려드리는 계좌로 입금하세요", True),
+    ("불러드리는 통장으로 보내십시오", True),
+    ("안내드리는 학원 계좌로 넣어주세요", True),
+    ("계좌번호를 알려주시면 입금해 드리겠습니다", False),
+    ("환급받으실 계좌를 알려주십시오", False),
+])
+def test_humble_direction_rule(scorer, text, expected):
+    """겸양 '-드리-'는 화자가 준다는 표지, 존경 '-주시-'는 청자가 준다는 표지다.
+
+    존경 쪽도 S5 자체는 걸릴 수 있다 — "계좌번호 알려"는 generic 키워드다.
+    갈리는 곳은 **specific 여부**다. 겸양 쪽만 조합 신호(P4)를 성립시킨다.
+    한국어 경어법이 방향을 구분해 주므로 표현을 늘려도 오탐이 늘지 않는다.
+    """
+    ev = scorer.extract(text)
+    assert ev.specific["S5"] is expected, text

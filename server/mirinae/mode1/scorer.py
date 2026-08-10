@@ -16,6 +16,7 @@ from dataclasses import dataclass, field
 
 from .context import classify, split_sentences
 from .matcher import Matcher, MatchSpan
+from .morphology import MorphRule, build_rules
 from .patterns import PatternDB
 from .router import Route, route_of
 
@@ -181,9 +182,11 @@ class ScoreResult:
 
 
 class Scorer:
-    def __init__(self, db: PatternDB, matcher: Matcher | None = None) -> None:
+    def __init__(self, db: PatternDB, matcher: Matcher | None = None,
+                 morph: list[MorphRule] | None = None) -> None:
         self.db = db
         self.matcher = matcher or Matcher()
+        self.morph = build_rules() if morph is None else morph
 
     # ── 단계 매칭 ─────────────────────────────────────────────────────────────
 
@@ -226,6 +229,25 @@ class Scorer:
                 matched[sid] = found
             if skipped:
                 suppressed[sid] = _dedupe(skipped)
+
+        # 형태 규칙 — 표면형을 나열하는 대신 구성을 잡는다.
+        # 키워드와 같은 문맥 판정(인용·고지·서술)을 그대로 통과시킨다.
+        for rule in self.morph:
+            for sent in sentences:
+                span = rule.find(sent)
+                if span is None:
+                    continue
+                if classify(sent, span).suppressed:
+                    suppressed.setdefault(rule.target, []).append(rule.label)
+                    continue
+                hits[rule.target] = max(hits.get(rule.target, 0.0), rule.score)
+                specific[rule.target] = True
+                matched.setdefault(rule.target, []).append(rule.label)
+                break
+        for sid in list(matched):
+            matched[sid] = _dedupe(matched[sid])
+        for sid in list(suppressed):
+            suppressed[sid] = _dedupe(suppressed[sid])
         return hits, matched, suppressed, specific
 
     def _first_direct_hit(self, sentences: list[str], forms: list[str],
