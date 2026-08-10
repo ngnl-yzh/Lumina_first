@@ -51,9 +51,9 @@ def test_db_matches_design_doc_counts(db):
     검증셋 2차에서 3항을 더 더했다 — 메신저피싱의 신분증·카드 사진 요구(S5),
     릴레이 사기 1단계의 "끊지 마시고"(S4). 둘 다 실제 수법인데 비어 있었다.
     """
-    assert db.n_base == 99, f"기본 표현 {db.n_base}개"
-    assert db.n_variants == 205, f"변형 {db.n_variants}개"
-    assert db.n_total == 304, f"합계 {db.n_total}개"
+    assert db.n_base == 101, f"기본 표현 {db.n_base}개"
+    assert db.n_variants == 215, f"변형 {db.n_variants}개"
+    assert db.n_total == 316, f"합계 {db.n_total}개"
 
 
 def test_stage_weights_match_doc(db):
@@ -642,3 +642,30 @@ def test_disclaimer_evasion_does_not_erase_the_call(scorer):
     ]:
         r = state.add_utterance(line)
     assert r.level == "위험", r.why()
+
+
+# ── 검증셋 4차 ────────────────────────────────────────────────────────────────
+
+def test_link_alone_is_not_a_critical_signal(scorer):
+    """'문자로 보내드린 링크'만으로 단독 고위험이 되면 안 된다.
+
+    정상 기업이 일상적으로 쓰는 말이다. 게다가 검증셋 4차에서 걸린 문장은
+    링크를 **누르지 말라는 경고**였다(Q-B-06).
+    위험한 것은 링크가 아니라 링크로 앱을 설치하는 것이다.
+    """
+    warn = scorer.score("문자로 보내드린 링크는 저희가 보내지 않으니 누르지 마세요")
+    assert "C6" not in warn.criticals, warn.why()
+    assert warn.level == "안전", warn.why()
+
+    scam = scorer.score("문자로 보내드린 링크 눌러 설치하시고 결제해 주세요")
+    assert "C6" in scam.criticals, scam.why()
+
+
+def test_honorific_particle_isolation_is_caught(scorer):
+    """'부모님께는 알리지 마세요' — 완전히 자연스러운 한국어인데 놓쳤었다.
+
+    기존 S4 표현은 전부 '말하지'만 있고 '알리지'가 없었으며,
+    높임 조사 '께'도 빠져 있었다(Q-F-08).
+    """
+    r = scorer.score("부모님께는 알리지 마세요. 본인 명의 건이라 그렇습니다.")
+    assert r.stage_hits["S4"] > 0, r.why()
