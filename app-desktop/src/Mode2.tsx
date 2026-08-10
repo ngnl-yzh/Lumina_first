@@ -1,19 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ChunkBuffer, MicRecorder, TARGET_SAMPLE_RATE, micSupportMessage } from "./lib/recorder";
-import { OverlapAdder, StreamClient, encodeWav, type ServerMessage } from "./lib/ws";
+import { MicRecorder, TARGET_SAMPLE_RATE, micSupportMessage } from "./lib/recorder";
+import { StreamClient, encodeWav, type ServerMessage } from "./lib/ws";
 import type { AppSettings, ConnState } from "./types";
-
-type ChunkState = "pending" | "sending" | "done" | "degraded";
-
-const CHUNK_COLOR: Record<ChunkState, string> = {
-  pending: "#DDE4EC",
-  sending: "#E8B84B",
-  done: "#5E5A94",
-  degraded: "#E07840",
-};
-
-const CHUNK_SAMPLES = TARGET_SAMPLE_RATE * 2;
-const HOP_SAMPLES = TARGET_SAMPLE_RATE * 1;
 
 /**
  * C-B 대조군 — 섭동과 **같은 세기**의 통화대역 잡음을 섞은 음성.
@@ -78,12 +66,15 @@ export default function Mode2({
   const [running, setRunning] = useState(false);
   const [finished, setFinished] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [chunks, setChunks] = useState<ChunkState[]>([]);
   const [snr, setSnr] = useState<number | null>(null);
   const [srs, setSrs] = useState<number | null>(null);
   const [elapsed, setElapsed] = useState<number | null>(null);
-  const [steps, setSteps] = useState<number | null>(null);
-  const [degraded, setDegraded] = useState(0);
+  const [processing, setProcessing] = useState(false);
+  const [progress, setProgress] = useState<{ step: number; total: number }>(
+    { step: 0, total: 0 });
+  const [basis, setBasis] = useState<string>("");
+  const [violation, setViolation] = useState<number | null>(null);
+  const [passed, setPassed] = useState<boolean | null>(null);
   const [secs, setSecs] = useState(0);
   const [level, setLevel] = useState(0);
   const [urls, setUrls] = useState<
@@ -92,8 +83,6 @@ export default function Mode2({
 
   const recRef = useRef<MicRecorder | null>(null);
   const wsRef = useRef<StreamClient | null>(null);
-  const bufRef = useRef(new ChunkBuffer(CHUNK_SAMPLES, HOP_SAMPLES));
-  const adderRef = useRef(new OverlapAdder(CHUNK_SAMPLES, HOP_SAMPLES));
   const rawRef = useRef<Float32Array[]>([]);
   const tickRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -102,15 +91,21 @@ export default function Mode2({
   const addLog = (s: string) =>
     setLog((prev) => [...prev.slice(-60), `${new Date().toLocaleTimeString()}  ${s}`]);
 
-  const setChunk = (i: number, s: ChunkState) =>
-    setChunks((prev) => {
-      const next = [...prev];
-      while (next.length <= i) next.push("pending");
-      next[i] = s;
-      return next;
-    });
-
-  const finalize = useCallback(() => {
+  /**
+   * 녹음을 멈추고 **발화 전체를 한 번에** 보호한다.
+   *
+   * 예전에는 2초 청크를 녹음 중에 실시간으로 보호했다. 그런데 그 방식은
+   * 방어가 성립하지 않았다 — 청크마다 자기 임베딩에서 멀어지므로 미는 방향이
+   * 제각각이고, 복제 모델이 파일 전체를 볼 때 서로 상쇄된다.
+   *
+   * 실사용 녹음 14초 실측 (60스텝 · SNR 20 dB · 통화채널 통과 후):
+   *   청크 스트리밍  SRS 0.8045   ← 판정 임계값 0.7962 위. 실패
+   *   전체 발화 일괄  SRS 0.3709   ← 크게 아래. 성공. 게다가 13배 빠르다
+   *
+   * 대가는 녹음이 끝나야 시작할 수 있다는 것이다.
+   * 되지도 않는 실시간을 흉내내는 것보다 되는 방어를 주는 편이 낫다.
+   */
+  const protectAll = useCallback(async () => {
     const total = rawRef.current.reduce((n, f) => n + f.length, 0);
     if (total === 0) return;
     const original = new Float32Array(total);
@@ -119,94 +114,104 @@ export default function Mode2({
       original.set(f, off);
       off += f.length;
     }
-    const prot = adderRef.current.result(original);
-    setUrls({
-      original: URL.createObjectURL(encodeWav(original, TARGET_SAMPLE_RATE)),
-      protected: URL.createObjectURL(encodeWav(prot, TARGET_SAMPLE_RATE)),
-      control: URL.createObjectURL(
-        encodeWav(bandNoiseMix(original, prot), TARGET_SAMPLE_RATE)),
+
+    setProcessing(true);
+    setProgress({ step: 0, total: 0 });
+    addLog(`녹음 ${(total / TARGET_SAMPLE_RATE).toFixed(1)}초 · 전체 발화 보호 시작`);
+
+    const ws = new StreamClient({
+      url: settings.serverUrl,
+      mode: "protect",
+      onState: onConn,
+      onMessage: (msg: ServerMessage) => {
+        if (msg.type === "ready") {
+          addLog(`서버 준비 · 최대 ${(msg as { steps?: number }).steps ?? "?"}스텝`);
+        } else if (msg.type === "progress") {
+          setProgress({ step: msg.step, total: msg.total });
+        } else if (msg.type === "done") {
+          const d = msg as unknown as {
+            srs: number; srs_basis: string; snr_db: number;
+            elapsed: number; audible_violation: number; below_threshold: boolean;
+          };
+          setSrs(d.srs);
+          setSnr(d.snr_db);
+          setElapsed(d.elapsed);
+          setBasis(d.srs_basis);
+          setViolation(d.audible_violation);
+          setPassed(d.below_threshold);
+          addLog(
+            `완료 · SRS ${d.srs.toFixed(4)} (${d.srs_basis}) · ` +
+              `SNR ${d.snr_db.toFixed(1)} dB · ${d.elapsed.toFixed(0)}초 · ` +
+              (d.below_threshold ? "다른 화자 판정" : "같은 화자 — 방어 미달"),
+          );
+        } else if (msg.type === "error") {
+          setError(msg.message);
+          addLog(`오류: ${msg.message}`);
+        }
+      },
+      onBinary: (_seq, delta) => {
+        const n = Math.min(original.length, delta.length);
+        const prot = new Float32Array(original.length);
+        prot.set(original);
+        for (let i = 0; i < n; i++) prot[i] = original[i] + delta[i];
+        setUrls({
+          original: URL.createObjectURL(encodeWav(original, TARGET_SAMPLE_RATE)),
+          protected: URL.createObjectURL(encodeWav(prot, TARGET_SAMPLE_RATE)),
+          control: URL.createObjectURL(
+            encodeWav(bandNoiseMix(original, prot), TARGET_SAMPLE_RATE)),
+        });
+        setFinished(true);
+        setProcessing(false);
+        ws.close();
+        onConn("disconnected");
+      },
     });
-    setFinished(true);
-    addLog(`조립 완료 · 청크 ${adderRef.current.count}개 · ${(total / TARGET_SAMPLE_RATE).toFixed(1)}초`);
-  }, []);
+
+    try {
+      await ws.connect();
+      wsRef.current = ws;
+      ws.sendLabeledAudio({ type: "audio", sample_rate: TARGET_SAMPLE_RATE }, original);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+      setProcessing(false);
+      onConn("disconnected");
+    }
+  }, [settings.serverUrl, onConn]);
 
   const stop = useCallback(async () => {
     if (tickRef.current) clearInterval(tickRef.current);
     tickRef.current = null;
     await recRef.current?.stop();
     recRef.current = null;
-    wsRef.current?.stop();
     setRunning(false);
-    // 마지막 청크의 δ가 돌아올 시간을 준다 — "발화 후 대기 0.5초"의 실체
-    setTimeout(() => {
-      finalize();
-      wsRef.current?.close();
-      wsRef.current = null;
-      onConn("disconnected");
-    }, 1200);
-  }, [finalize, onConn]);
-
-  const onMessage = useCallback((msg: ServerMessage) => {
-    if (msg.type === "chunk") {
-      setChunk(msg.seq, msg.degraded ? "degraded" : "done");
-      setSnr(msg.snr_db);
-      setSrs(msg.srs);
-      setElapsed(msg.elapsed);
-      setSteps(msg.steps);
-      if (msg.degraded) setDegraded((d) => d + 1);
-      addLog(
-        `청크 ${msg.seq} · SRS ${msg.srs.toFixed(3)} · SNR ${msg.snr_db.toFixed(1)} dB · ` +
-          `${msg.steps}스텝 · ${msg.elapsed.toFixed(2)}초${msg.degraded ? " [감축]" : ""}`,
-      );
-    } else if (msg.type === "error") {
-      setError(msg.message);
-      addLog(`오류: ${msg.message}`);
-    }
-  }, []);
+    void protectAll();
+  }, [protectAll]);
 
   const start = useCallback(async () => {
     setError(null);
-    setChunks([]);
     setSnr(null);
     setSrs(null);
     setElapsed(null);
-    setSteps(null);
-    setDegraded(0);
     setSecs(0);
     setFinished(false);
+    setPassed(null);
+    setViolation(null);
+    setBasis("");
+    setProgress({ step: 0, total: 0 });
     setUrls(null);
     setLog([]);
-    bufRef.current.reset();
-    adderRef.current.reset();
     rawRef.current = [];
 
     try {
-      addLog(`서버 연결 ${settings.serverUrl}`);
-      const ws = new StreamClient({
-        url: settings.serverUrl,
-        mode: "mode2",
-        onMessage,
-        onBinary: (seq, delta) => adderRef.current.add(seq, delta),
-        onState: onConn,
-      });
-      await ws.connect();
-      wsRef.current = ws;
-      addLog("연결됨 · 2.0초 청크 / 1.0초 홉");
-
+      // 녹음 중에는 서버에 붙지 않는다. 보호는 정지 후 한 번에 한다.
       const rec = new MicRecorder({
         onLevel: setLevel,
         onError: setError,
-        onFrame: (pcm) => {
-          rawRef.current.push(pcm.slice(0));
-          for (const { seq, audio } of bufRef.current.push(pcm)) {
-            setChunk(seq, "sending");
-            ws.sendAudio(audio, seq);
-          }
-        },
+        onFrame: (pcm) => rawRef.current.push(pcm.slice(0)),
       });
       await rec.start();
       recRef.current = rec;
-      addLog("마이크 시작");
+      addLog("마이크 시작 · 녹음 중 (보호는 정지 후 일괄)");
 
       tickRef.current = setInterval(() => setSecs((s) => s + 1), 1000);
       setRunning(true);
@@ -214,9 +219,11 @@ export default function Mode2({
       const m = e instanceof Error ? e.message : String(e);
       setError(m);
       addLog(`실패: ${m}`);
-      await stop();
+      await recRef.current?.stop();
+      recRef.current = null;
+      setRunning(false);
     }
-  }, [settings.serverUrl, onMessage, onConn, stop]);
+  }, []);
 
   useEffect(() => () => void recRef.current?.stop(), []);
 
@@ -234,16 +241,14 @@ export default function Mode2({
     a.click();
   };
 
-  const done = chunks.filter((c) => c === "done" || c === "degraded").length;
-
   return (
     <div className="split">
       <div className="pane">
         <div>
           <h1 className="page">딥보이스 학습 방지</h1>
           <p className="lede">
-            녹음과 동시에 적대적 섭동을 주입합니다. 2초 청크를 서버로 보내고 δ를 받아
-            50% 겹침으로 조립합니다.
+            녹음을 마치면 <strong>발화 전체를 한 번에</strong> 최적화해 적대적 섭동을 주입합니다.
+            청크로 쪼개 실시간 처리하던 방식은 방어가 성립하지 않아 바꿨습니다.
           </p>
         </div>
 
@@ -251,8 +256,12 @@ export default function Mode2({
         {error && <div className="banner banner-warn">{error}</div>}
 
         {!running ? (
-          <button className="btn btn-mode2" onClick={() => void start()} disabled={!!support}>
-            {finished ? "다시 녹음" : "녹음 시작"}
+          <button
+            className="btn btn-mode2"
+            onClick={() => void start()}
+            disabled={!!support || processing}
+          >
+            {processing ? "보호 처리 중…" : finished ? "다시 녹음" : "녹음 시작"}
           </button>
         ) : (
           <button className="btn btn-dark" onClick={() => void stop()}>
@@ -278,20 +287,28 @@ export default function Mode2({
               <div className="small">낮을수록 좋음</div>
             </div>
             <div className="metric">
-              <div className="k">청크</div>
-              <div className="v">{done}</div>
+              <div className="k">판정</div>
+              <div
+                className="v"
+                style={{
+                  fontSize: 20,
+                  color: passed === null ? "#8794A0" : passed ? "#2E7D52" : "#A62F5B",
+                }}
+              >
+                {passed === null ? "—" : passed ? "다른 화자" : "같은 화자"}
+              </div>
               <div className="small">{secs}초 녹음</div>
             </div>
           </div>
           {elapsed !== null && (
             <p className="small mono" style={{ marginTop: 10 }}>
-              마지막 청크 {steps}스텝 · {elapsed.toFixed(2)}초 처리
-              {elapsed > 1.0 && " ← 홉(1.0초)보다 느립니다. 적체가 쌓입니다"}
+              {elapsed.toFixed(0)}초 처리 · 기준 {basis}
             </p>
           )}
-          {degraded > 0 && (
+          {violation !== null && violation >= 0.05 && (
             <div className="banner banner-note" style={{ marginTop: 10, marginBottom: 0 }}>
-              서버가 밀려 {degraded}개 청크의 스텝을 줄였습니다. 이 구간은 방어가 약합니다.
+              마스킹 임계값을 넘는 구간이 {(violation * 100).toFixed(0)}%입니다.
+              들릴 수 있으니 원본과 나란히 들어보고 판단하세요.
             </div>
           )}
         </div>
@@ -306,33 +323,32 @@ export default function Mode2({
 
       <div className="pane">
         <div className="card">
-          <div className="card-title">청크 진행 — 2.0초 단위 / 1.0초 홉</div>
-          <div className="chunk-grid">
-            {chunks.length === 0 ? (
-              <p className="muted">녹음을 시작하면 표시됩니다</p>
-            ) : (
-              chunks.map((c, i) => (
-                <div key={i} className="chunk" style={{ background: CHUNK_COLOR[c] }}>
-                  {i}
-                </div>
-              ))
-            )}
-          </div>
-          <div className="small" style={{ marginTop: 10, display: "flex", gap: 14 }}>
-            {(
-              [
-                ["#DDE4EC", "대기"],
-                ["#E8B84B", "전송"],
-                ["#5E5A94", "완료"],
-                ["#E07840", "스텝 감축"],
-              ] as const
-            ).map(([c, l]) => (
-              <span key={l} style={{ display: "flex", alignItems: "center", gap: 5 }}>
-                <i style={{ width: 10, height: 10, borderRadius: 3, background: c, display: "inline-block" }} />
-                {l}
-              </span>
-            ))}
-          </div>
+          <div className="card-title">보호 진행</div>
+          {processing ? (
+            <>
+              <p className="small" style={{ marginBottom: 10 }}>
+                발화 전체를 최적화하는 중입니다. 녹음 길이와 장비에 따라 수십 초 걸립니다.
+              </p>
+              <div className="bar">
+                <span
+                  style={{
+                    width: progress.total
+                      ? `${(progress.step / progress.total) * 100}%` : "0%",
+                    background: "#5E5A94",
+                  }}
+                />
+              </div>
+              <p className="small mono" style={{ marginTop: 8 }}>
+                {progress.total ? `${progress.step} / ${progress.total} 스텝` : "준비 중…"}
+              </p>
+            </>
+          ) : finished ? (
+            <p className="small">
+              완료되었습니다. 아래에서 들어보고 파일을 저장하세요.
+            </p>
+          ) : (
+            <p className="muted">녹음을 마치면 시작됩니다</p>
+          )}
         </div>
 
         {finished && urls && (

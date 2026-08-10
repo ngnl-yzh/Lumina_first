@@ -35,6 +35,8 @@ export type ServerMessage =
   | { type: "chunk"; seq: number; srs: number; snr_db: number; steps: number;
       degraded: boolean; elapsed: number }
   | { type: "done"; [k: string]: unknown }
+  // 모드 2 — 발화 전체를 한 번에 보호한다 (청크 스트리밍을 대체)
+  | { type: "progress"; step: number; total: number }
   // 복제 검증 — 사용자가 외부 서비스에서 만든 복제음을 넣어 유사도를 잰다
   | { type: "reference_ok"; duration: number }
   | { type: "result"; label: string; id: number; srs: number; duration: number }
@@ -44,7 +46,7 @@ export type ConnState = "disconnected" | "connecting" | "connected" | "error";
 
 export interface ClientOptions {
   url: string;
-  mode: "mode1" | "mode2" | "compare";
+  mode: "mode1" | "mode2" | "protect" | "compare";
   onMessage: (msg: ServerMessage) => void;
   /** 모드 2에서 서버가 돌려준 섭동 δ. 직전 chunk 헤더의 순번에 대응한다. */
   onBinary?: (seq: number, delta: Float32Array) => void;
