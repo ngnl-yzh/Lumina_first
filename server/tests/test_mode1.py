@@ -51,9 +51,9 @@ def test_db_matches_design_doc_counts(db):
     검증셋 2차에서 3항을 더 더했다 — 메신저피싱의 신분증·카드 사진 요구(S5),
     릴레이 사기 1단계의 "끊지 마시고"(S4). 둘 다 실제 수법인데 비어 있었다.
     """
-    assert db.n_base == 99, f"기본 표현 {db.n_base}개"
-    assert db.n_variants == 205, f"변형 {db.n_variants}개"
-    assert db.n_total == 304, f"합계 {db.n_total}개"
+    assert db.n_base == 102, f"기본 표현 {db.n_base}개"
+    assert db.n_variants == 216, f"변형 {db.n_variants}개"
+    assert db.n_total == 318, f"합계 {db.n_total}개"
 
 
 def test_stage_weights_match_doc(db):
@@ -725,3 +725,57 @@ def test_humble_direction_rule(scorer, text, expected):
     """
     ev = scorer.extract(text)
     assert ev.specific["S5"] is expected, text
+
+
+# ── 검증셋 5차 ────────────────────────────────────────────────────────────────
+
+@pytest.mark.parametrize("text", [
+    "이 건은 아무한테도 알리시면 곤란합니다",
+    "가족에게 알리는 것은 삼가 주십시오",
+    "은행 직원에게 언급하시는 것도 금물입니다",
+])
+def test_euphemistic_prohibition_is_caught(scorer, text):
+    """완곡한 금지도 금지다. '-지 마' 계열만 보면 빠져나간다(P-F-03·10)."""
+    assert scorer.extract(text).hits["S4"] > 0, text
+
+
+@pytest.mark.parametrize("text", [
+    "제가 문자로 적어드리는 계좌로 옮겨 두십시오",
+    "제가 문자로 보내드리는 구좌로 자금을 옮기세요",
+    "제가 알려드리는 구좌로 돈을 옮겨 두시면 됩니다",
+])
+def test_designation_variants_are_caught(scorer, text):
+    """'구좌'는 고령층 대상에서 실제로 쓰이는 옛말이다(P-F-05·10)."""
+    ev = scorer.extract(text)
+    assert ev.hits["S5"] > 0 and ev.specific["S5"], text
+
+
+def test_lawyer_confidentiality_duty_is_not_a_threat(scorer):
+    """"저희 쪽에서 누설하는 일은 없습니다" — 화자가 자기 의무를 말하는 형태다.
+
+    상대에게 함구를 요구하는 것과 정반대인데 위험으로 판정했었다(P-B-07).
+    """
+    state = CallState(scorer)
+    for line in [
+        "변호사 비밀유지 의무가 있으니 저희 쪽에서 누설하는 일은 없습니다.",
+        "착수금은 제가 안내드리는 사무소 계좌로 입금해 주시면 됩니다.",
+        "위임계약서 검토하시고 천천히 결정하세요.",
+    ]:
+        r = state.add_utterance(line)
+    assert r.level == "안전", r.why()
+
+
+def test_mentioning_a_public_office_is_not_impersonating_one(scorer):
+    """"가까운 주민센터 방문하셔도 됩니다"는 정상 안내다.
+
+    지자체 사칭을 잡으려고 기관명을 S1에 넣었다가 이 문장이 걸렸다(H-B-04).
+    기관을 **언급**하는 것과 **사칭**하는 것은 다르다.
+    """
+    state = CallState(scorer)
+    for line in [
+        "안녕하세요, 광주광역시 세무과입니다.",
+        "환급받으실 계좌번호를 알려주시면 그쪽으로 입금해 드리겠습니다.",
+        "본인 확인이 필요하니 가까운 주민센터 방문하셔도 됩니다.",
+    ]:
+        r = state.add_utterance(line)
+    assert r.level == "안전", r.why()
