@@ -57,6 +57,12 @@ from .matcher import MatchSpan, normalize
 #: 현금화 행위. 어간만 적으면 활용형은 뒤의 `_ACT_TAIL`이 받는다.
 WITHDRAW = ("인출", "찾으시", "찾아서", "빼시", "빼서", "출금")
 
+#: 넘길 수 있는 **물건**. 대면편취는 현금만 가져가지 않는다 —
+#: 통장·체크카드·도장을 그대로 받아 가는 유형이 고령층에서 특히 많다.
+#: 11차 R11-F12에서 "통장이랑 도장 준비해 두세요 ... 직원이 방문하면
+#: 건네주시면 됩니다"를 놓쳤다. 프레임이 인출만 보고 있었다.
+ASSET_ITEM = ("통장", "체크카드", "현금", "돈", "도장", "카드")
+
 #: 넘기는 행위 — 대면편취의 두 번째 자리.
 HANDOVER = ("건네", "전달", "드리면", "주시면", "맡기", "가져다")
 
@@ -181,3 +187,56 @@ def _remote_grant_frame() -> Frame:
 
 def build_frames() -> list[Frame]:
     return [_cash_handover_frame(), _unknown_install_frame(), _remote_grant_frame()]
+
+
+# ── 통화 전체에 걸쳐 채워지는 프레임 ─────────────────────────────────────────
+#
+# 위의 프레임들은 문장 단위로 돈다. 그런데 사기범이 자리를 **나눠서** 말하면
+# 걸리지 않는다. 11차 R11-F12가 그랬다.
+#
+#     "제가 대신 신청해 드릴 테니 통장이랑 도장 준비해 두세요"   ← 자산 준비
+#     "이따 직원이 방문하면 건네주시면 됩니다"                    ← 대면 전달
+#
+# 두 마디에 나뉘어 있어서 문장 단위 프레임이 통째로 비켜 갔다.
+# 자연스러운 말하기 방식이지 회피가 아니다 — 한 문장에 다 넣는 쪽이 오히려 부자연스럽다.
+#
+# 그래서 **자리를 따로 세고 통화 단위로 합친다.** 증거 누적과 같은 구조다.
+# 어느 마디에서 채워졌든 통화가 끝날 때 자리가 다 차 있으면 프레임이 성립한다.
+
+#: 자산을 손에 쥐게 만드는 자리.
+SLOT_PREPARE = re.compile(
+    f"(?:(?:{_alt(WITHDRAW)}){_ACT_TAIL}"
+    f"|(?:{_alt(ASSET_ITEM)})[가-힣]{{0,3}}?(?:준비|챙기|가지고|들고|찾아))"
+)
+
+#: 사기범 쪽 사람에게 넘기는 자리.
+SLOT_HANDOVER = re.compile(
+    f"(?:{_alt(RECIPIENT)})[가-힣]{{0,6}}?(?:{_alt(HANDOVER)})"
+)
+
+#: 통화 단위 프레임 — (자리 이름, 정규식) 목록과 성립 조건.
+CALL_FRAMES: tuple[tuple[str, str, tuple[tuple[str, re.Pattern[str]], ...]], ...] = (
+    ("C9", "자산 준비 후 대면 전달",
+     (("준비", SLOT_PREPARE), ("전달", SLOT_HANDOVER))),
+)
+
+
+def call_frame_slots(sentence: str) -> list[tuple[str, str, MatchSpan]]:
+    """이 문장이 채우는 자리를 돌려준다. (프레임 id, 자리 이름, 구간)"""
+    norm = normalize(sentence)
+    out = []
+    for fid, _label, slots in CALL_FRAMES:
+        for name, rx in slots:
+            m = rx.search(norm)
+            if m:
+                out.append((fid, name, MatchSpan(name, "frame", m.start(), m.end(), 0)))
+    return out
+
+
+def call_frame_complete(filled: dict[str, set[str]]) -> list[str]:
+    """자리가 다 찬 프레임의 대상 id."""
+    done = []
+    for fid, _label, slots in CALL_FRAMES:
+        if filled.get(fid, set()) >= {name for name, _ in slots}:
+            done.append(fid)
+    return done

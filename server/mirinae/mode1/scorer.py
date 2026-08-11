@@ -16,7 +16,8 @@ from dataclasses import dataclass, field
 
 from .context import classify, split_sentences
 from .matcher import Matcher, MatchSpan
-from .frames import Frame, build_frames
+from .frames import (Frame, build_frames, call_frame_complete,
+                     call_frame_slots)
 from .morphology import MorphRule, build_rules
 from .patterns import PatternDB
 from .router import Route, route_of
@@ -109,6 +110,9 @@ class Evidence:
     benign: list[str] = field(default_factory=list)
     specific: dict[str, bool] = field(default_factory=dict)
     first_seen: dict[str, int] = field(default_factory=dict)
+    #: 통화 단위 프레임의 채워진 자리. {프레임 id: {자리 이름}}
+    #: 사기범이 자리를 여러 마디에 나눠 말해도 통화가 끝날 때 합쳐서 본다.
+    frame_slots: dict[str, set[str]] = field(default_factory=dict)
     n_units: int = 0
 
     def merge(self, other: "Evidence") -> "Evidence":
@@ -127,6 +131,8 @@ class Evidence:
         self.benign = _dedupe(self.benign + other.benign)
         for sid, idx in other.first_seen.items():
             self.first_seen.setdefault(sid, idx)      # 처음 본 시점을 지킨다
+        for fid, names in other.frame_slots.items():
+            self.frame_slots.setdefault(fid, set()).update(names)
         self.n_units += other.n_units
         return self
 
@@ -361,6 +367,12 @@ class Scorer:
         hits, matched, suppressed, specific = self.stage_hits(text)
         criticals, crit_skipped = self.find_criticals(text)
         frame_hits, frame_skipped = self.find_frames(text)
+        slots: dict[str, set[str]] = {}
+        for sent in split_sentences(text):
+            for fid, name, span in call_frame_slots(sent):
+                if classify(sent, span).suppressed:
+                    continue
+                slots.setdefault(fid, set()).add(name)
         criticals = _dedupe(criticals + frame_hits)
         crit_skipped = _dedupe(crit_skipped + frame_skipped)
         if crit_skipped:
@@ -371,6 +383,7 @@ class Scorer:
             suppressed=suppressed,
             criticals=criticals,
             benign=self.find_benign(text),
+            frame_slots=slots,
             specific=specific,
             first_seen={s: index for s, v in hits.items() if v > 0},
             n_units=1,
@@ -420,7 +433,8 @@ class Scorer:
         raw = (stage_score + bonus) / route.denominator - penalty
         score = min(1.0, max(0.0, raw))
 
-        criticals = ev.criticals
+        # 통화 단위 프레임 — 자리가 여러 마디에 나뉘어 채워졌어도 합쳐서 본다.
+        criticals = _dedupe(ev.criticals + call_frame_complete(ev.frame_slots))
         pairs = self.find_pairs(hits, ev.specific)
 
         # 하한은 감점을 받지 않는다 — 감점으로 무너뜨릴 수 있으면 하한이 아니다.
