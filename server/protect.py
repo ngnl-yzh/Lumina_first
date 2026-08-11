@@ -68,6 +68,11 @@ def main() -> int:
                    help="처리 길이(초). 입력 파일도 앞에서 이만큼만 잘라 쓴다. "
                         "0이면 파일 전체")
     p.add_argument("-o", "--out", default="out", help="출력 폴더")
+    p.add_argument(
+        "--no-ecapa", action="store_true",
+        help=("Resemblyzer 단독으로 최적화한다. 비교 측정 전용이다 — "
+              "단독은 다른 복제 모델로 전이되지 않는다(실측 ECAPA 0.8265)."),
+    )
     p.add_argument("--steps", type=int, default=PGDConfig.steps)
     p.add_argument("--ratio", type=float, default=PGDConfig.masking_ratio,
                    help="마스킹 배율 — 청취 평가로 확정할 값")
@@ -110,7 +115,7 @@ def main() -> int:
     # 앙상블이 기본이다. 단독 최적화는 다른 복제 모델로 전이되지 않는다 —
     # 실측에서 Resemblyzer만 보고 최적화한 보호본이 ECAPA-TDNN에는
     # 0.8265로 남았다(판정 임계값 0.7962). 앙상블은 0.5094까지 내린다.
-    encoder = build_ensemble(device=device)
+    encoder = build_ensemble(device=device, with_ecapa=not args.no_ecapa)
     print("처리 중...")
     result = protect_utterance(x, encoder, cfg, with_controls=not args.no_controls)
 
