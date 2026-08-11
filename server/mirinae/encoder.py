@@ -204,6 +204,45 @@ class EcapaEncoder(torch.nn.Module):
     name = "ecapa"
     embedding_dim = 192
 
+    @staticmethod
+    def _drop_broken_lazy_modules() -> None:
+        """SpeechBrain의 **해결 불가능한 선택 의존성**이 터지지 않게 막는다.
+
+        speechbrain은 k2 같은 선택적 의존성을 `LazyModule`로 등록한다.
+        그런데 `inspect.getmodule()`처럼 sys.modules를 훑으며
+        `hasattr(module, "__file__")`를 부르는 코드가 그것을 건드리면
+        `__getattr__`이 실제 import를 시도하다 ImportError를 던진다.
+
+        librosa가 내부에서 스택을 순회하므로 **인코더와 아무 상관 없는 곳에서
+        터진다.** 실제로 세 번 겪었다 — 리샘플링에서 한 번, PGD 파이프라인에서 두 번.
+
+        sys.modules에서 지우는 것으로는 안 된다. 부모 패키지가 다시 만들어 낸다.
+        그래서 `ensure_module` 자체를 감싸 **실패하면 예외 대신 빈 모듈**을
+        돌려주게 한다. 우리는 k2를 쓰지 않으므로 잃는 기능이 없다.
+        """
+        try:
+            from speechbrain.utils import importutils
+        except Exception:                             # noqa: BLE001
+            return
+        lazy = getattr(importutils, "LazyModule", None)
+        if lazy is None or getattr(lazy, "_mirinae_patched", False):
+            return
+
+        import types as _types
+
+        original = lazy.ensure_module
+
+        def safe_ensure_module(self, *args, **kwargs):     # noqa: ANN001
+            try:
+                return original(self, *args, **kwargs)
+            except Exception:                             # noqa: BLE001
+                stub = _types.ModuleType(str(getattr(self, "target", "lazy")))
+                stub.__file__ = "<speechbrain 선택 의존성 미설치>"
+                return stub
+
+        lazy.ensure_module = safe_ensure_module
+        lazy._mirinae_patched = True
+
     def __init__(self, device: torch.device | None = None,
                  savedir: str = "models/ecapa") -> None:
         super().__init__()
@@ -215,6 +254,7 @@ class EcapaEncoder(torch.nn.Module):
             savedir=savedir,
             run_opts={"device": str(self.device)},
         )
+        self._drop_broken_lazy_modules()
         for m in self.clf.mods.values():
             m.eval()
             for prm in m.parameters():
@@ -250,6 +290,61 @@ class EcapaEncoder(torch.nn.Module):
         return gap
 
 
+class WavlmEncoder(torch.nn.Module):
+    """WavLM-SV (Microsoft · 자기지도 트랜스포머) — **세 번째** 인코더.
+
+    ## 왜 셋째가 필요했나
+
+    Resemblyzer + ECAPA 앙상블로 실제 복제음의 ECAPA 유사도를
+    0.7667 → 0.6766까지 밀었다(신뢰구간 분리). 방향은 맞았다.
+    그런데 **Resemblyzer 쪽이 0.9010으로 버텨** 저지율은 여전히 0%였다.
+
+    인코더 둘로는 부족하다는 뜻이다. 그래서 셋째를 붙이되,
+    앞의 둘과 최대한 겹치지 않는 것을 고른다.
+
+    | | Resemblyzer | ECAPA-TDNN | **WavLM-SV** |
+    |---|---|---|---|
+    | 구조 | 3층 LSTM | TDNN + SE-Res2Block | **트랜스포머 12층** |
+    | 특징 | 선형 mel 40 | log fbank 80 | **원시 파형(CNN 프런트엔드)** |
+    | 학습 | 지도 (GE2E) | 지도 (VoxCeleb) | **자기지도 후 미세조정** |
+    | 임베딩 | 256 | 192 | 512 |
+
+    **특징 추출부터 다르다** — WavLM은 mel을 거치지 않고 파형을 직접 먹는다.
+    mel 영역에서만 통하는 섭동은 여기서 걸러진다.
+
+    ## 미분 경로
+
+    `WavLMForXVector`는 파형 텐서를 그대로 받고 내부가 전부 torch 모듈이라
+    별도 우회가 필요 없다. 다만 학습된 정규화(zero-mean unit-var)를 직접
+    적용해야 특징 추출기와 값이 맞는다.
+    """
+
+    name = "wavlm"
+    embedding_dim = 512
+
+    def __init__(self, device: torch.device | None = None,
+                 model_id: str = "microsoft/wavlm-base-plus-sv") -> None:
+        super().__init__()
+        from transformers import WavLMForXVector
+
+        self.device = device or default_device()
+        self.model = WavLMForXVector.from_pretrained(model_id).to(self.device)
+        self.model.eval()
+        for prm in self.model.parameters():
+            prm.requires_grad_(False)
+
+    def forward(self, wav: torch.Tensor, normalize: bool = True) -> torch.Tensor:
+        """(n_samples,) 파형 → (512,) 임베딩. 16 kHz를 가정한다."""
+        x = wav.to(self.device)
+        if x.dim() == 1:
+            x = x.unsqueeze(0)
+        # 특징 추출기가 하는 정규화를 그대로 재현한다 (do_normalize=True).
+        x = (x - x.mean(dim=-1, keepdim=True)) / torch.sqrt(
+            x.var(dim=-1, keepdim=True) + 1e-7)
+        emb = self.model(input_values=x).embeddings.squeeze(0)
+        return F.normalize(emb, dim=0) if normalize else emb
+
+
 class EncoderEnsemble(torch.nn.Module):
     """여러 인코더의 손실을 합산한다 — 전이성 확보용 (AntiFake 노선).
 
@@ -282,7 +377,8 @@ def cosine_distance(a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
 
 
 def build_ensemble(device: torch.device | None = None,
-                   with_ecapa: bool = True) -> EncoderEnsemble:
+                   with_ecapa: bool = True,
+                   with_wavlm: bool = True) -> EncoderEnsemble:
     """기본 앙상블 — Resemblyzer + ECAPA-TDNN.
 
     ECAPA를 못 불러오면(패키지 부재·가중치 다운로드 실패) Resemblyzer 단독으로
@@ -290,13 +386,20 @@ def build_ensemble(device: torch.device | None = None,
     측정으로 확인된 사실이라, 그 상태를 모르고 쓰면 안 된다.
     """
     encoders: list[torch.nn.Module] = [SpeakerEncoder(device=device)]
+    import warnings
+
+    optional = []
     if with_ecapa:
+        optional.append(("ECAPA-TDNN", EcapaEncoder))
+    if with_wavlm:
+        optional.append(("WavLM-SV", WavlmEncoder))
+    for label, cls in optional:
         try:
-            encoders.append(EcapaEncoder(device=device))
+            encoders.append(cls(device=device))
         except Exception as exc:                      # noqa: BLE001
-            import warnings
             warnings.warn(
-                f"ECAPA-TDNN을 불러오지 못해 Resemblyzer 단독으로 돕니다: {exc}. "
-                "단독 최적화는 다른 복제 모델로 전이되지 않습니다(실측 0.8131).",
+                f"{label}을 불러오지 못해 앙상블에서 빠집니다: {exc}. "
+                "인코더가 적을수록 다른 복제 모델로 전이되지 않습니다 "
+                "(단독 실측 ECAPA 0.8131 · 둘 실측 Resemblyzer 0.9010).",
                 RuntimeWarning, stacklevel=2)
     return EncoderEnsemble(encoders)
