@@ -91,6 +91,12 @@ NEGATION = (
 #:     정상  "계좌번호 알려주시면"      청자가 계좌를 준다
 HUMBLE = ("드리", "주")
 
+#: 겸양 + 관형형 과거가 **한 음절로 융합한** 형태.
+#: 드리 + ㄴ = 드린, 주 + ㄴ = 준. 음절 단위로 도는 규칙에서는
+#: 자모 'ㄴ'이 결합하지 못하므로 융합형을 따로 적어야 한다.
+#: 10차에서 "제가 말씀**드린** 데로 옮기시면"을 놓쳤다(V-S1).
+HUMBLE_PAST = ("드린", "주신", "준")
+
 #: 겸양 앞에 오는 '지정' 동사 어간.
 DESIGNATE_STEMS = (
     "알려", "불러", "안내해", "안내", "말씀", "지정해", "지정", "찍어",
@@ -174,8 +180,7 @@ def _designated_account_rule() -> MorphRule:
     "계좌번호 알려주시면"(정상)이 걸리지 않는 것은 그 때문이다.
     """
     pat = (f"(?:{_alt(DESIGNATE_STEMS)})"
-           f"(?:{_alt(HUMBLE)})"
-           f"(?:{_alt(ADNOMINAL)})"
+           f"(?:(?:{_alt(HUMBLE)})(?:{_alt(ADNOMINAL)})|(?:{_alt(HUMBLE_PAST)}))"
            f"[가-힣]{{0,{MODIFIER_GAP}}}?"
            f"(?:{_alt(DESTINATION)})")
     return MorphRule(

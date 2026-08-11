@@ -71,7 +71,7 @@ def test_route_denominators_match_doc():
 
 
 def test_db_has_all_criticals_and_pairs(db):
-    assert [c.id for c in db.criticals] == ["C1", "C2", "C3", "C4", "C5", "C6", "C7"]
+    assert [c.id for c in db.criticals] == ["C1", "C2", "C3", "C4", "C5", "C6", "C7", "C8"]
     assert [p.id for p in db.pairs] == ["P1", "P2", "P3", "P4"]
 
 
@@ -934,3 +934,28 @@ def test_bankbook_discriminator_is_the_act_not_the_noun(scorer, text, flagged):
     """
     ev = scorer.extract(text)
     assert (bool(ev.criticals) or ev.specific.get("S5", False)) is flagged, text
+
+
+# ── 검증셋 10차 ───────────────────────────────────────────────────────────────
+
+def test_adnominal_past_fusion(scorer):
+    """드리 + ㄴ = 드린. 음절 규칙에서 자모는 결합하지 못한다(V-S1)."""
+    assert scorer.extract("제가 말씀드린 데로 옮기시면 됩니다").specific["S5"]
+    assert scorer.extract("제가 말씀드리는 데로 옮기시면 됩니다").specific["S5"]
+
+
+def test_blocking_official_payment_channel(scorer):
+    """정상 기관은 자기가 발급한 납부 경로를 막지 않는다.
+
+    최소대립쌍 3은 이 한 문장만 다르다.
+    """
+    scam = scorer.score("고지서 계좌는 마감돼서 제가 불러드리는 계좌로만 됩니다")
+    assert "C8" in scam.criticals, scam.why()
+    ok = scorer.score("고지서에 있는 가상계좌로 납부하시면 됩니다")
+    assert not ok.criticals, ok.why()
+
+
+def test_news_context_is_descriptive(scorer):
+    """"안전계좌 그거 뉴스에서 봤어"는 잡담이다(V-B9)."""
+    r = scorer.score("야 요즘 안전계좌 그거 뉴스에서 봤어")
+    assert "C1" not in r.criticals, r.why()
