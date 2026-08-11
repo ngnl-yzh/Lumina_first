@@ -51,9 +51,9 @@ def test_db_matches_design_doc_counts(db):
     검증셋 2차에서 3항을 더 더했다 — 메신저피싱의 신분증·카드 사진 요구(S5),
     릴레이 사기 1단계의 "끊지 마시고"(S4). 둘 다 실제 수법인데 비어 있었다.
     """
-    assert db.n_base == 105, f"기본 표현 {db.n_base}개"
-    assert db.n_variants == 228, f"변형 {db.n_variants}개"
-    assert db.n_total == 333, f"합계 {db.n_total}개"
+    assert db.n_base == 106, f"기본 표현 {db.n_base}개"
+    assert db.n_variants == 235, f"변형 {db.n_variants}개"
+    assert db.n_total == 341, f"합계 {db.n_total}개"
 
 
 def test_stage_weights_match_doc(db):
@@ -895,3 +895,42 @@ def test_bankbook_photo_request_is_critical(scorer):
     """정상 기관은 계좌번호를 묻지 통장 사진을 요구하지 않는다(Z-F-10)."""
     r = scorer.score("통장이랑 신분증 찍어서 보내주시면 등록해 드릴게요")
     assert "C7" in r.criticals, r.why()
+
+
+# ── 검증셋 9차 ────────────────────────────────────────────────────────────────
+
+@pytest.mark.parametrize("line", [
+    "안전계좌 그렇다는 말씀입니다. 그쪽으로 이체하십시오.",
+    "안전계좌 이렇다는 말씀입니다. 그쪽으로 이체하십시오.",
+    "안전계좌 저렇다는 겁니다. 잔액을 옮기십시오.",
+    "안전계좌로 옮기세요. 어쩌라고 있는 규정입니다.",
+])
+def test_deictic_conjunctions_are_matched_by_construction(scorer, line):
+    """접속 표현을 열거하지 않고 구성으로 잡는다.
+
+    8차에서 9개짜리 열거로 막았더니 9차에서 지시대명사만 바꾼
+    "저렇다는"이 그대로 통과했다(W-F-02). 1~4차에서 배운 것과 같다 —
+    **열거는 끝이 없다.** 지시 어간 × 인용 어미로 곱한다.
+    """
+    state = CallState(scorer)
+    state.add_utterance("서울중앙지검 수사관입니다.")
+    r = state.add_utterance(line)
+    assert "C1" in r.criticals, r.why()
+
+
+@pytest.mark.parametrize("text,flagged", [
+    ("통장이랑 도장, 신분증 가지고 오시면 됩니다", False),
+    ("기초연금 신청하시려면 통장이랑 신분증 가지고 방문하시면 됩니다", False),
+    ("어머니 통장이랑 도장 어디 두셨는지 알아?", False),
+    ("통장이랑 신분증 찍어서 보내주시면 등록해 드릴게요", True),
+    ("통장 사본 보내주세요", True),
+])
+def test_bankbook_discriminator_is_the_act_not_the_noun(scorer, text, flagged):
+    """지참은 정상이고 전송이 위험하다.
+
+    8차에서 '통장이랑 도장'을 명사쌍만으로 단독 고위험에 넣었더니
+    진짜 은행 창구·주민센터 안내와 형제간 대화가 걸렸다(W-B-01·02·10).
+    은행은 "가지고 오세요"라고 하고 사기범은 "찍어서 보내세요"라고 한다.
+    """
+    ev = scorer.extract(text)
+    assert (bool(ev.criticals) or ev.specific.get("S5", False)) is flagged, text

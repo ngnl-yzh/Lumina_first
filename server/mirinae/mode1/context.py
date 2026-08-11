@@ -36,6 +36,8 @@
 
 from __future__ import annotations
 
+import re
+
 from dataclasses import dataclass
 
 from .matcher import MatchSpan, normalize
@@ -76,9 +78,30 @@ GUARDED_MARKERS: dict[str, str] = {"래서": "그"}
 # 그래서 **어미가 아니라 표현을 지운다.** 판정 전에 이 문자열들을 창에서
 # 제거하면, 그 안에 든 어미는 애초에 보이지 않고 다른 위치의 진짜 인용은
 # 그대로 남는다.
-CONJUNCTION_NOISE: tuple[str, ...] = (
-    "그렇다는", "그렇다니까", "그렇다고", "그러라고", "그러니까",
-    "그렇다면", "그러다가", "그렇다며", "그러라는",
+# 지시 어간. 이것 자체는 무한하지 않다 — 한국어의 지시·의문 어간은 닫힌 집합이다.
+DEICTIC_STEMS = (
+    "그렇", "이렇", "저렇", "아무렇", "어떻",
+    "그러", "이러", "저러", "어쩌",
+    "그런", "이런", "저런",
+    "뭐", "무어", "머",
+)
+
+# 접속·강조 표현 = 지시 어간 + 인용 어미.
+#
+#     그렇다는  이렇다는  저렇다는  ← '다는'
+#     그러라고  이러라고  어쩌라고  ← '라고'
+#     그렇다니까                    ← '다니까'
+#
+# 8차에서는 이걸 9개짜리 **열거**로 막았다. 9차에서 지시대명사만 바꾼
+# "국고 계좌 **저렇다는** 겁니다"가 그대로 통과했다(W-F-02).
+#
+# 1~4차에서 배운 것과 같다 — **열거는 끝이 없다.** 그래서 여기서도
+# 표현을 세지 않고 구성을 센다. 지시 어간은 닫힌 집합이고,
+# 인용 어미도 이미 닫힌 집합으로 갖고 있다. 곱해서 정규식 하나로 만든다.
+CONJUNCTION_RE = re.compile(
+    "(?:" + "|".join(DEICTIC_STEMS) + ")"
+    "(?:" + "|".join(sorted(set(QUOTE_MARKERS) | set(GUARDED_MARKERS), key=len,
+                            reverse=True)) + ")"
 )
 
 
@@ -88,10 +111,7 @@ def _strip_conjunctions(text: str) -> str:
     길이를 지키는 이유는 인용 어미의 **위치**로 가장 가까운 것을 고르기
     때문이다. 길이가 바뀌면 그 순서가 흐트러진다.
     """
-    for phrase in CONJUNCTION_NOISE:
-        if phrase in text:
-            text = text.replace(phrase, "　" * len(phrase))
-    return text
+    return CONJUNCTION_RE.sub(lambda m: "　" * len(m.group(0)), text)
 
 # **'래서'를 통째로 뺐다가 가드로 바꿨다.** 접속부사 "그래서"에 그대로 들어 있어서,
 # 지시 뒤에 "그래서"만 붙이면 억제가 켜졌다. 검증셋 6차에서 실제로 뚫렸다 —
