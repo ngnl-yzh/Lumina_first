@@ -1,0 +1,246 @@
+"""복제 모델을 직접 공격한다 — 화자 검증기가 아니라 **생성기**를 표적으로.
+
+## 왜 방향을 바꿨나
+
+지금까지는 화자 검증기(Resemblyzer·ECAPA·WavLM)를 표적으로 삼았다.
+검증기 쪽 숫자는 잘 내려갔다 — SRS 0.49~0.66. 그런데 **DSR은 네 번 다 0%**였다.
+
+    인코더 1→2→3개 · 40→200스텝 · 채널표적→원본표적
+    네 축을 바꿔 네 번 쟀고 전부 저지 0%
+
+원인이 분명했다. 복제 모델은 우리가 공격한 검증기를 **쓰지 않는다.**
+자기 방식으로 참조 음성에서 화자 특징을 뽑고, 그 과정에서 우리 섭동이 씻겨 나간다.
+
+**검증기를 속이는 것과 생성기를 막는 것은 다른 문제다.**
+이 스크립트는 후자를 한다.
+
+## 무엇을 표적으로 삼나
+
+XTTS-v2는 참조 음성에서 **두 갈래**로 화자 정보를 뽑는다.
+
+| 경로 | 무엇 | 쓰이는 곳 |
+|---|---|---|
+| `hifigan_decoder.speaker_encoder` | 512차원 화자 임베딩 (16 kHz) | 보코더 — **음색** |
+| `get_gpt_cond_latents` | mel 기반 조건 잠재 (1024×T) | GPT — **말투·운율** |
+
+둘 다 순수 torch 모듈이라 파형까지 역전파가 닿는다.
+`@torch.inference_mode()`는 바깥 래퍼에 붙어 있어 `__wrapped__`로 벗기면 된다.
+
+**둘을 동시에 민다.** 음색만 밀면 GPT가 운율로 화자를 복원하고,
+운율만 밀면 보코더가 음색을 복원한다 — 검증기 하나만 공격했을 때와 같은 실패다.
+
+## 일반화
+
+이 구조는 모델에 종속되지 않는다. 어떤 제로샷 복제기든
+**참조 음성 → 화자 조건**을 뽑는 미분 가능한 경로가 있고, 거기가 표적이다.
+GPT-SoVITS면 `cnhubert` + SoVITS `ref_enc`가 같은 자리다.
+`ClonerTarget`을 하나 더 구현하면 같은 최적화 루프가 그대로 돈다.
+"""
+
+from __future__ import annotations
+
+import argparse
+import os
+import warnings
+from dataclasses import dataclass
+from pathlib import Path
+
+import numpy as np
+import soundfile as sf
+import torch
+
+warnings.filterwarnings("ignore")
+
+SAMPLE_RATE = 16000
+XTTS_SR = 22050          # XTTS가 참조 음성을 읽는 표본화율
+
+
+# ── 표적 인터페이스 ───────────────────────────────────────────────────────────
+
+@dataclass
+class Conditioning:
+    """복제기가 참조 음성에서 뽑은 화자 조건."""
+
+    speaker: torch.Tensor        # 음색 임베딩
+    prosody: torch.Tensor | None  # 말투·운율 잠재 (없는 모델도 있다)
+
+
+class ClonerTarget:
+    """복제 모델의 화자 조건화 경로. 모델마다 하나씩 구현한다."""
+
+    name = "?"
+
+    def conditioning(self, wav16k: torch.Tensor) -> Conditioning:
+        raise NotImplementedError
+
+
+class XttsTarget(ClonerTarget):
+    """XTTS-v2 — 보코더 화자 임베딩 + GPT 조건 잠재."""
+
+    name = "xtts-v2"
+
+    def __init__(self, device: torch.device) -> None:
+        from TTS.tts.configs.xtts_config import XttsConfig
+        from TTS.tts.models.xtts import Xtts
+        from TTS.utils.manage import ModelManager
+
+        path, _, _ = ModelManager().download_model(
+            "tts_models/multilingual/multi-dataset/xtts_v2")
+        cfg = XttsConfig()
+        cfg.load_json(os.path.join(path, "config.json"))
+        self.model = Xtts.init_from_config(cfg)
+        self.model.load_checkpoint(cfg, checkpoint_dir=path, eval=True)
+        self.model.to(device).eval()
+        for p in self.model.parameters():
+            p.requires_grad_(False)
+        self.device = device
+
+        # inference_mode 래퍼를 벗겨야 gradient가 흐른다.
+        gpt = self.model.get_gpt_cond_latents
+        self._gpt_cond = getattr(gpt, "__wrapped__", None)
+
+    def conditioning(self, wav16k: torch.Tensor) -> Conditioning:
+        import torchaudio
+
+        w = wav16k.to(self.device)
+        if w.dim() == 1:
+            w = w.unsqueeze(0)
+
+        # ① 보코더 화자 임베딩 — 16 kHz를 그대로 먹는다.
+        #    resnet 내부가 squeeze_()로 in-place를 쓰므로 복제해서 넘긴다.
+        spk = self.model.hifigan_decoder.speaker_encoder.forward(
+            w.clone(), l2_norm=True)
+
+        # ② GPT 조건 잠재 — XTTS는 22.05 kHz로 참조를 읽는다.
+        pros = None
+        if self._gpt_cond is not None:
+            w22 = torchaudio.functional.resample(w, SAMPLE_RATE, XTTS_SR)
+            pros = self._gpt_cond(self.model, w22, XTTS_SR, length=6, chunk_length=6)
+        return Conditioning(speaker=spk.flatten(), prosody=None if pros is None
+                            else pros.flatten())
+
+
+TARGETS = {"xtts": XttsTarget}
+
+
+# ── 최적화 ────────────────────────────────────────────────────────────────────
+
+def _snr_project(delta: torch.Tensor, x: torch.Tensor, snr_db: float) -> torch.Tensor:
+    """섭동 세기를 목표 SNR로 맞춘다. 세기 제약은 이것 하나로 통일한다."""
+    sig = float(torch.mean(x ** 2))
+    target = sig / (10.0 ** (snr_db / 10.0))
+    cur = float(torch.mean(delta ** 2))
+    if cur <= 1e-12:
+        return delta
+    return delta * float((target / cur) ** 0.5)
+
+
+def _cos(a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
+    return torch.nn.functional.cosine_similarity(a.unsqueeze(0), b.unsqueeze(0))[0]
+
+
+def attack(x: torch.Tensor, target: ClonerTarget, steps: int = 120,
+           snr_db: float = 20.0, prosody_weight: float = 1.0,
+           progress: bool = True) -> tuple[torch.Tensor, dict]:
+    """복제기의 화자 조건에서 멀어지도록 파형을 민다.
+
+    손실은 **원본 조건과의 코사인 유사도**다. 두 경로를 함께 내린다 —
+    한쪽만 밀면 다른 쪽이 화자를 복원한다.
+    """
+    device = next(iter(getattr(target, "model").parameters())).device
+    x = x.to(device)
+    with torch.no_grad():
+        ref = target.conditioning(x)
+
+    delta = torch.zeros_like(x, requires_grad=True)
+    opt = torch.optim.Adam([delta], lr=1e-3)
+
+    hist = {"speaker": [], "prosody": []}
+    for step in range(steps):
+        cur = target.conditioning(x + delta)
+        loss = _cos(cur.speaker, ref.speaker)
+        if cur.prosody is not None and ref.prosody is not None:
+            loss = loss + prosody_weight * _cos(cur.prosody, ref.prosody)
+        opt.zero_grad(set_to_none=True)
+        loss.backward()
+        opt.step()
+        with torch.no_grad():
+            delta.data = _snr_project(delta.data, x, snr_db)
+            delta.data = torch.clamp(x + delta.data, -1.0, 1.0) - x
+        if progress and (step % 10 == 0 or step == steps - 1):
+            with torch.no_grad():
+                c = target.conditioning(x + delta)
+                s = float(_cos(c.speaker, ref.speaker))
+                pr = (float(_cos(c.prosody, ref.prosody))
+                      if c.prosody is not None and ref.prosody is not None else float("nan"))
+            hist["speaker"].append(s); hist["prosody"].append(pr)
+            print(f"  [{step + 1:4}/{steps}] 화자 {s:+.4f} · 운율 {pr:+.4f}")
+
+    with torch.no_grad():
+        protected = torch.clamp(x + delta, -1.0, 1.0)
+        c = target.conditioning(protected)
+        final = {
+            "speaker": float(_cos(c.speaker, ref.speaker)),
+            "prosody": (float(_cos(c.prosody, ref.prosody))
+                        if c.prosody is not None and ref.prosody is not None else None),
+            "snr_db": float(10 * torch.log10(
+                torch.mean(x ** 2) / torch.clamp(torch.mean((protected - x) ** 2),
+                                                 min=1e-12))),
+        }
+    return protected.cpu(), final
+
+
+def main() -> int:
+    p = argparse.ArgumentParser(
+        description="복제 모델의 화자 조건화 경로를 직접 공격한다")
+    p.add_argument("input")
+    p.add_argument("-o", "--out", default="out/attack")
+    p.add_argument("--target", default="xtts", choices=list(TARGETS))
+    p.add_argument("--steps", type=int, default=120)
+    p.add_argument("--snr", type=float, default=20.0)
+    p.add_argument("--seconds", type=float, default=6.0)
+    p.add_argument("--prosody-weight", type=float, default=1.0,
+                   help="운율 경로 가중치. 0이면 음색만 민다")
+    args = p.parse_args()
+
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print(f"장치: {device} · 표적: {args.target}")
+
+    x, sr = sf.read(args.input, dtype="float32")
+    if x.ndim > 1:
+        x = x.mean(axis=1)
+    if sr != SAMPLE_RATE:
+        from math import gcd
+        from scipy.signal import resample_poly
+        g = gcd(int(sr), SAMPLE_RATE)
+        x = resample_poly(x, SAMPLE_RATE // g, int(sr) // g).astype(np.float32)
+    if args.seconds:
+        x = x[: int(SAMPLE_RATE * args.seconds)]
+    xt = torch.from_numpy(np.ascontiguousarray(x))
+    print(f"입력: {args.input} · {len(x) / SAMPLE_RATE:.1f}초")
+
+    target = TARGETS[args.target](device)
+    print(f"{args.steps}스텝 · 목표 SNR {args.snr} dB · 운율 가중치 {args.prosody_weight}")
+    protected, final = attack(xt, target, steps=args.steps, snr_db=args.snr,
+                              prosody_weight=args.prosody_weight)
+
+    out = Path(args.out)
+    out.mkdir(parents=True, exist_ok=True)
+    sf.write(str(out / "original.wav"), x, SAMPLE_RATE)
+    sf.write(str(out / "protected.wav"), protected.numpy(), SAMPLE_RATE)
+
+    pr = final["prosody"]
+    print()
+    print("복제기 내부 조건 (원본 대비 코사인 · 낮을수록 다른 화자로 인식)")
+    print(f"  화자 임베딩  {final['speaker']:+.4f}")
+    print(f"  운율 잠재    {pr:+.4f}" if pr is not None else "  운율 잠재    —")
+    print(f"  SNR         {final['snr_db']:.2f} dB")
+    print(f"\n출력: {out.resolve()}")
+    print("다음 — 실제 복제로 확인:")
+    print(f"  .venv-xtts\\Scripts\\python clone_test.py {out}/original.wav "
+          f"{out}/protected.wav --repeat 5 -o out/clone_attack")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

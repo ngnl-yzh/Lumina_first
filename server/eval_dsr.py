@@ -13,7 +13,10 @@ sys.path.insert(0, ".")
 from mirinae.encoder import (SpeakerEncoder, EcapaEncoder, WavlmEncoder,
                              cosine_similarity)
 
-THRESHOLD = 0.7962          # C-D 대조군에서 측정한 EER 지점
+#: 인코더별 판정 임계값. **하나의 숫자를 셋에 쓰면 안 된다** —
+#: 인코더마다 유사도 분포가 다르다. 화자 6명·조각 35개로 잰 EER 지점이다.
+#: 재측정: python eval_thresholds.py
+THRESHOLDS = {"Resemblyzer": 0.8090, "ECAPA": 0.5062, "WavLM": 0.8773}
 
 SR = 16000
 
@@ -49,9 +52,12 @@ def sim(a, b):
 conds = [("단독 (Res)", "out/cmp_single", "out/clone_single"),
          ("2개 (Res+ECAPA)", "out/ens_smoke",  "out/clone_ens"),
          ("3개 200스텝 (채널표적)", "out/ens3_200", "out/clone_ens3"),
-         ("3개 200스텝 (원본표적)", "out/raw3_200", "out/clone_raw3")]
+         ("3개 200스텝 (원본표적)", "out/raw3_200", "out/clone_raw3"),
+         ("복제기 직접공격 30스텝", "out/attack_xtts", "out/clone_attack")]
 
-print(f"복제 모델 XTTS-v2 · 조건당 5회 · 판정 임계값 {THRESHOLD} · 전부 {SR} Hz로 맞춤")
+th = " · ".join(f"{n} {THRESHOLDS[n]}" for n, _ in ENCODERS)
+print(f"복제 모델 XTTS-v2 · 조건당 5회 · 전부 {SR} Hz로 맞춤")
+print(f"인코더별 임계값 — {th}")
 print("=" * 92)
 head = "".join(f"{n:>16}" for n, _ in ENCODERS)
 print(f"{'보호 방식':24} {'복제 대상':10}{head} {'저지':>6}")
@@ -71,7 +77,7 @@ for label, src, clone_dir in conds:
             c = load(f)
             vals = [sim(refs[i], emb(e, c)) for i, (_, e) in enumerate(ENCODERS)]
             for i, v in enumerate(vals): cols[i].append(v)
-            blocked += all(v < THRESHOLD for v in vals)
+            blocked += all(v < THRESHOLDS[n] for (n, _), v in zip(ENCODERS, vals))
         def ci(v):
             return 0.0 if len(v) < 2 else 1.96 * statistics.stdev(v) / len(v) ** 0.5
         cells = "".join(f"{statistics.mean(c):9.4f}±{ci(c):.3f}" for c in cols)
