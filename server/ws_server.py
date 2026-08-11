@@ -59,8 +59,12 @@ class Services:
         whisper_size: str = "base",
         deepvoice: bool = False,
         deepvoice_scoring: bool = False,
+        n_encoders: int = 2,
     ) -> None:
         self.device = device
+        #: 최적화에 쓸 화자 인코더 수. 많을수록 전이가 잘 되지만 비례해 느려진다.
+        #: 실측상 어느 값이든 XTTS 복제는 막지 못한다(DSR 0%).
+        self.n_encoders = n_encoders
         self.db = load_db()
         self.scorer = Scorer(self.db)
         self.stt = SpeechToText(model_size=whisper_size)
@@ -90,7 +94,11 @@ class Services:
     def encoder(self) -> SpeakerEncoder:
         if self._encoder is None:
             # 앙상블 — 단독은 다른 복제 모델로 전이되지 않는다(실측 0.8265).
-            self._encoder = build_ensemble(device=self.device)
+            self._encoder = build_ensemble(
+                device=self.device,
+                with_ecapa=self.n_encoders >= 2,
+                with_wavlm=self.n_encoders >= 3,
+            )
         return self._encoder
 
     @property
@@ -505,6 +513,7 @@ async def amain(args) -> None:
         whisper_size=args.whisper,
         deepvoice=args.deepvoice,
         deepvoice_scoring=args.deepvoice_scoring,
+        n_encoders=args.encoders,
     )
     if args.deepvoice:
         print("  딥보이스 탐지 켜짐 — 자체 측정 재현율 18.8%(XTTS). 참고용으로만 볼 것")
@@ -513,7 +522,10 @@ async def amain(args) -> None:
     if not args.no_warmup:
         svc.warm_up()
 
-    cfg = PGDConfig(steps=args.steps, masking_ratio=args.ratio)
+    cfg = PGDConfig(steps=args.steps, masking_ratio=args.ratio,
+                    time_budget_sec=args.time_budget or None)
+    print(f"  모드 2 — 인코더 {args.encoders}개 · 최대 {args.steps}스텝 · "
+          f"시간 예산 {args.time_budget or 0:.0f}초")
 
     ssl_ctx = None
     if args.ssl_cert and args.ssl_key:
@@ -541,6 +553,19 @@ def main() -> int:
                    help="tiny/base/small/medium. 한국어는 small 이상을 권장한다. "
                         "GPU가 있으면 medium도 실시간을 유지한다")
     p.add_argument("--steps", type=int, default=PGDConfig.steps)
+    p.add_argument(
+        "--time-budget", type=float, default=90.0,
+        help=("보호 1건에 쓸 최대 초. 장비에 맞춰 스텝 수가 자동으로 줄어든다. "
+              "0이면 제한 없음. 기본 90초 — 앙상블은 CPU에서 8초 녹음에 "
+              "7분이 걸려 그대로 두면 앱이 멈춘 것처럼 보인다."),
+    )
+    p.add_argument(
+        "--encoders", type=int, default=2, choices=[1, 2, 3],
+        help=("최적화에 쓸 화자 인코더 수. 1=Resemblyzer, 2=+ECAPA, 3=+WavLM. "
+              "많을수록 다른 모델로 전이가 잘 되지만 비례해 느려진다. "
+              "실측상 어느 값이든 XTTS 복제는 막지 못한다(DSR 0%) — "
+              "많이 쓴다고 방어가 되는 것은 아니다."),
+    )
     p.add_argument("--ratio", type=float, default=PGDConfig.masking_ratio)
     p.add_argument("--ssl-cert")
     p.add_argument("--ssl-key")
