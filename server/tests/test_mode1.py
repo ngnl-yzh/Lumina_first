@@ -51,9 +51,9 @@ def test_db_matches_design_doc_counts(db):
     검증셋 2차에서 3항을 더 더했다 — 메신저피싱의 신분증·카드 사진 요구(S5),
     릴레이 사기 1단계의 "끊지 마시고"(S4). 둘 다 실제 수법인데 비어 있었다.
     """
-    assert db.n_base == 106, f"기본 표현 {db.n_base}개"
-    assert db.n_variants == 235, f"변형 {db.n_variants}개"
-    assert db.n_total == 341, f"합계 {db.n_total}개"
+    assert db.n_base == 108, f"기본 표현 {db.n_base}개"
+    assert db.n_variants == 245, f"변형 {db.n_variants}개"
+    assert db.n_total == 353, f"합계 {db.n_total}개"
 
 
 def test_stage_weights_match_doc(db):
@@ -71,7 +71,7 @@ def test_route_denominators_match_doc():
 
 
 def test_db_has_all_criticals_and_pairs(db):
-    assert [c.id for c in db.criticals] == ["C1", "C2", "C3", "C4", "C5", "C6", "C7", "C8"]
+    assert [c.id for c in db.criticals] == ["C1", "C2", "C3", "C4", "C5", "C6", "C7", "C8", "C9"]
     assert [p.id for p in db.pairs] == ["P1", "P2", "P3", "P4"]
 
 
@@ -959,3 +959,46 @@ def test_news_context_is_descriptive(scorer):
     """"안전계좌 그거 뉴스에서 봤어"는 잡담이다(V-B9)."""
     r = scorer.score("야 요즘 안전계좌 그거 뉴스에서 봤어")
     assert "C1" not in r.criticals, r.why()
+
+
+# ── 행위 프레임 (10차 이후) ───────────────────────────────────────────────────
+
+def test_frame_beats_noun_for_remote_access(scorer):
+    """명사 '원격제어'가 아니라 **설치를 시키는가**가 판별자다.
+
+    10차에서 정반대 결과가 나왔다 — 사기범은 '원격으로'라고만 말해 빠져나가고
+    사내 IT 지원이 정확한 용어를 써서 걸렸다(V-S6 대 V-B10).
+    """
+    scam = scorer.score("지금 화면에 뜨는 거 설치하시면 제가 원격으로 봐드릴게요")
+    assert "C5" in scam.criticals, scam.why()
+    ok = scorer.score("제가 원격제어로 봐드릴게요 사내 프로그램이요")
+    assert "C5" not in ok.criticals, ok.why()
+
+
+def test_cash_handover_frame(scorer):
+    """인출과 대면 전달이 이어지는 것이 대면편취형의 정의다(V-S2)."""
+    r = scorer.score("일단 인출하신 다음에 저희 직원한테 건네주시면 보관증 드려요")
+    assert "C9" in r.criticals, r.why()
+    ok = scorer.score("지금 은행 가셔서 전액 인출하셔야 됩니다")
+    assert "C9" not in ok.criticals, ok.why()
+
+
+def test_install_warning_is_not_install_instruction(scorer):
+    """"링크는 누르지 마세요"는 경고다. 프레임은 부정형을 배제한다."""
+    r = scorer.score("문자로 보내드린 링크는 저희가 보내지 않으니 누르지 마세요")
+    assert not r.criticals, r.why()
+
+
+def test_minimal_pair_account_provenance(scorer):
+    """계좌 출처가 화자 지정이냐 기존이냐로 갈린다(최소대립쌍 1)."""
+    scam = CallState(scorer)
+    for l in ["네 여보세요 어머니 저 준영이요",
+              "제가 지금 알려드리는 계좌로 삼백만 원만 보내주실 수 있어요"]:
+        r = scam.add_utterance(l)
+    assert r.level == "위험", r.why()
+
+    ok = CallState(scorer)
+    for l in ["네 여보세요 어머니 저 준영이요",
+              "저번에 쓰던 제 계좌로 삼백만 원만 보내주실 수 있어요"]:
+        r = ok.add_utterance(l)
+    assert r.level == "안전", r.why()

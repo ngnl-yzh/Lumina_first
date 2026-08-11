@@ -16,6 +16,7 @@ from dataclasses import dataclass, field
 
 from .context import classify, split_sentences
 from .matcher import Matcher, MatchSpan
+from .frames import Frame, build_frames
 from .morphology import MorphRule, build_rules
 from .patterns import PatternDB
 from .router import Route, route_of
@@ -187,6 +188,7 @@ class Scorer:
         self.db = db
         self.matcher = matcher or Matcher()
         self.morph = build_rules() if morph is None else morph
+        self.frames = build_frames()
 
     # ── 단계 매칭 ─────────────────────────────────────────────────────────────
 
@@ -281,6 +283,27 @@ class Scorer:
 
     # ── 고위험 신호 ───────────────────────────────────────────────────────────
 
+    def find_frames(self, text: str) -> tuple[list[str], list[str]]:
+        """행위 프레임 — 명사가 아니라 "무엇을 어디로 누가 시키는가"를 본다.
+
+        키워드와 똑같이 문장 단위로 돌고 문맥 판정(인용·고지·서술)을 통과한다.
+        근거는 `frames.py`에 있다.
+        """
+        sentences = split_sentences(text)
+        out: list[str] = []
+        skipped: list[str] = []
+        for fr in self.frames:
+            for sent in sentences:
+                span = fr.find(sent)
+                if span is None:
+                    continue
+                if classify(sent, span).suppressed:
+                    skipped.append(fr.target)
+                    continue
+                out.append(fr.target)
+                break
+        return _dedupe(out), _dedupe(skipped)
+
     def find_criticals(self, text: str) -> tuple[list[str], list[str]]:
         """단독 고위험 신호. 인용된 것은 제외하고 별도로 보고한다."""
         sentences = split_sentences(text)
@@ -337,6 +360,9 @@ class Scorer:
         """
         hits, matched, suppressed, specific = self.stage_hits(text)
         criticals, crit_skipped = self.find_criticals(text)
+        frame_hits, frame_skipped = self.find_frames(text)
+        criticals = _dedupe(criticals + frame_hits)
+        crit_skipped = _dedupe(crit_skipped + frame_skipped)
         if crit_skipped:
             suppressed = {**suppressed, "critical": crit_skipped}
         return Evidence(
