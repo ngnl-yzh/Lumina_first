@@ -120,7 +120,113 @@ class XttsTarget(ClonerTarget):
                             else pros.flatten())
 
 
-TARGETS = {"xtts": XttsTarget}
+class GptSovitsTarget(ClonerTarget):
+    """GPT-SoVITS — 한국어 복제의 사실상 표준.
+
+    XTTS와 **구조가 다르다.** 여기가 중요하다 — 한 모델만 막으면
+    그 모델에 대한 과적합이지 방어가 아니라는 것을 검증기 쪽에서 세 번 겪었다.
+
+    | | XTTS-v2 | GPT-SoVITS |
+    |---|---|---|
+    | 음색 | HiFi-GAN 화자 인코더 (ResNet, 파형 입력) | `ref_enc` MelStyleEncoder (**선형 스펙트로그램** 입력) |
+    | 내용 | GPT 조건 잠재 (mel) | cnhubert SSL 특징 |
+    | 표본화율 | 22.05 kHz 참조 | 32 kHz 스펙트로그램 |
+
+    `ref_enc`는 참조 음성의 **선형 스펙트로그램**에서 음색 벡터를 뽑는다.
+    XTTS의 파형 입력 인코더와 겹치는 곳이 거의 없으므로,
+    둘을 함께 공격하면 "구조가 다른 두 모델에 동시에 통하는 방향"이 된다.
+    """
+
+    name = "gpt-sovits"
+    GSV_SR = 32000          # SoVITS가 쓰는 표본화율
+
+    def __init__(self, device: torch.device) -> None:
+        import sys
+        sys.path.insert(0, str(Path(__file__).parent))
+        sys.path.insert(0, str(Path(__file__).parent / "GPT_SoVITS"))
+        from huggingface_hub import snapshot_download
+        from GPT_SoVITS.module.models import SynthesizerTrn
+
+        root = Path(snapshot_download("lj1995/GPT-SoVITS",
+                                      allow_patterns=["s2G488k.pth"]))
+        ckpt = torch.load(root / "s2G488k.pth", map_location="cpu",
+                          weights_only=False)
+        hps = ckpt["config"]
+        # 체크포인트의 config는 dict일 수도 HParams일 수도 있다.
+        def g(o, k, d=None):
+            return o[k] if isinstance(o, dict) else getattr(o, k, d)
+        data, model = g(hps, "data"), g(hps, "model")
+        mdict = model if isinstance(model, dict) else vars(model)
+        self.model = SynthesizerTrn(
+            g(data, "filter_length") // 2 + 1,
+            32,                                # segment_size는 추론에 안 쓰인다
+            n_speakers=g(data, "n_speakers", 0) or 0,
+            version="v1",          # s2G488k는 v1 체크포인트다. v2로 만들면
+            **mdict,               # ref_enc 입력 차원이 1025→704로 어긋난다
+        )
+        # 우리는 ref_enc만 쓴다. 텍스트 임베딩 등 나머지는 없어도 된다.
+        missing, unexpected = self.model.load_state_dict(ckpt["weight"], strict=False)
+        need = [k for k in missing if k.startswith("ref_enc")]
+        if need:
+            raise RuntimeError(f"ref_enc 가중치가 비었다: {need[:3]}")
+        self.model.to(device).eval()
+        for prm in self.model.parameters():
+            prm.requires_grad_(False)
+        self.device = device
+        self.n_fft = g(data, "filter_length")
+        self.hop = g(data, "hop_length")
+        self.win = g(data, "win_length")
+        self.register = torch.hann_window(self.win).to(device)
+
+    def _spec(self, w32: torch.Tensor) -> torch.Tensor:
+        """선형 스펙트로그램 — GPT-SoVITS의 `spectrogram_torch`와 같은 설정."""
+        pad = (self.n_fft - self.hop) // 2
+        y = torch.nn.functional.pad(w32.unsqueeze(1), (pad, pad), mode="reflect").squeeze(1)
+        spec = torch.stft(y, self.n_fft, hop_length=self.hop, win_length=self.win,
+                          window=self.register, center=False, pad_mode="reflect",
+                          normalized=False, onesided=True, return_complex=True)
+        return torch.sqrt(torch.abs(spec) ** 2 + 1e-8)
+
+    def conditioning(self, wav16k: torch.Tensor) -> Conditioning:
+        import torchaudio
+
+        w = wav16k.to(self.device)
+        if w.dim() == 1:
+            w = w.unsqueeze(0)
+        w32 = torchaudio.functional.resample(w, SAMPLE_RATE, self.GSV_SR)
+        spec = self._spec(w32)
+        # ref_enc는 (B, C, T) 스펙트로그램을 먹고 음색 벡터를 낸다.
+        # 마스크는 넘기지 않는다 — `mask.int() == 0`을 "가림"으로 쓰는 구조라
+        # zeros를 넘기면 전 구간이 가려져 출력이 상수가 되고 gradient가 끊긴다.
+        ge = self.model.ref_enc(spec * 1.0, None)
+        return Conditioning(speaker=ge.flatten(), prosody=None)
+
+
+class MultiTarget(ClonerTarget):
+    """여러 복제기를 **동시에** 공격한다.
+
+    한 모델만 막으면 그 모델에 대한 과적합이다 — 검증기 쪽에서 세 번 겪었다
+    (단독→ECAPA 0.8131, 2개→WavLM 0.9620). 복제기라고 다를 이유가 없다.
+
+    XTTS와 GPT-SoVITS는 음색을 뽑는 방식이 다르다 —
+    파형 입력 ResNet 대 선형 스펙트로그램 입력 MelStyleEncoder.
+    둘을 함께 밀면 **구조가 다른 두 모델에 동시에 통하는 방향**만 남는다.
+    """
+
+    name = "multi"
+
+    def __init__(self, targets: list[ClonerTarget]) -> None:
+        self.targets = targets
+        self.model = targets[0].model      # device 조회용
+
+    def conditioning(self, wav16k: torch.Tensor) -> Conditioning:
+        raise NotImplementedError("MultiTarget은 all_conditioning을 쓴다")
+
+    def all_conditioning(self, wav16k: torch.Tensor) -> list[Conditioning]:
+        return [t.conditioning(wav16k) for t in self.targets]
+
+
+TARGETS = {"xtts": XttsTarget, "gsv": GptSovitsTarget}
 
 
 # ── 최적화 ────────────────────────────────────────────────────────────────────
@@ -168,8 +274,10 @@ def attack(x: torch.Tensor, target: ClonerTarget, steps: int = 120,
     """
     device = next(iter(getattr(target, "model").parameters())).device
     x = x.to(device)
+    multi = isinstance(target, MultiTarget)
+    cond = target.all_conditioning if multi else (lambda w: [target.conditioning(w)])
     with torch.no_grad():
-        ref = target.conditioning(x)
+        refs = cond(x)
 
     model = thr = None
     if masking_ratio is not None:
@@ -182,11 +290,23 @@ def attack(x: torch.Tensor, target: ClonerTarget, steps: int = 120,
     opt = torch.optim.Adam([delta], lr=1e-3)
 
     hist = {"speaker": [], "prosody": []}
+    def total_loss(w: torch.Tensor) -> tuple[torch.Tensor, list[float], list[float]]:
+        """모든 표적의 화자·운율 유사도를 함께 내린다."""
+        curs = cond(w)
+        loss = torch.zeros((), device=device)
+        sp, pr = [], []
+        for c, r in zip(curs, refs):
+            l_s = _cos(c.speaker, r.speaker)
+            loss = loss + l_s
+            sp.append(float(l_s.detach()))
+            if c.prosody is not None and r.prosody is not None:
+                l_p = _cos(c.prosody, r.prosody)
+                loss = loss + prosody_weight * l_p
+                pr.append(float(l_p.detach()))
+        return loss, sp, pr
+
     for step in range(steps):
-        cur = target.conditioning(x + delta)
-        loss = _cos(cur.speaker, ref.speaker)
-        if cur.prosody is not None and ref.prosody is not None:
-            loss = loss + prosody_weight * _cos(cur.prosody, ref.prosody)
+        loss, _, _ = total_loss(x + delta)
         opt.zero_grad(set_to_none=True)
         loss.backward()
         opt.step()
@@ -197,20 +317,19 @@ def attack(x: torch.Tensor, target: ClonerTarget, steps: int = 120,
             delta.data = torch.clamp(x + delta.data, -1.0, 1.0) - x
         if progress and (step % 10 == 0 or step == steps - 1):
             with torch.no_grad():
-                c = target.conditioning(x + delta)
-                s = float(_cos(c.speaker, ref.speaker))
-                pr = (float(_cos(c.prosody, ref.prosody))
-                      if c.prosody is not None and ref.prosody is not None else float("nan"))
-            hist["speaker"].append(s); hist["prosody"].append(pr)
-            print(f"  [{step + 1:4}/{steps}] 화자 {s:+.4f} · 운율 {pr:+.4f}")
+                _, sp, pr = total_loss(x + delta)
+            names = ([t.name for t in target.targets] if multi else [target.name])
+            cells = " · ".join(f"{n} {v:+.4f}" for n, v in zip(names, sp))
+            tail = f" | 운율 {pr[0]:+.4f}" if pr else ""
+            print(f"  [{step + 1:4}/{steps}] {cells}{tail}")
 
     with torch.no_grad():
         protected = torch.clamp(x + delta, -1.0, 1.0)
-        c = target.conditioning(protected)
+        _, sp, pr = total_loss(protected)
+        names = ([t.name for t in target.targets] if multi else [target.name])
         final = {
-            "speaker": float(_cos(c.speaker, ref.speaker)),
-            "prosody": (float(_cos(c.prosody, ref.prosody))
-                        if c.prosody is not None and ref.prosody is not None else None),
+            "speaker": dict(zip(names, sp)),
+            "prosody": (pr[0] if pr else None),
             "snr_db": float(10 * torch.log10(
                 torch.mean(x ** 2) / torch.clamp(torch.mean((protected - x) ** 2),
                                                  min=1e-12))),
@@ -223,7 +342,8 @@ def main() -> int:
         description="복제 모델의 화자 조건화 경로를 직접 공격한다")
     p.add_argument("input")
     p.add_argument("-o", "--out", default="out/attack")
-    p.add_argument("--target", default="xtts", choices=list(TARGETS))
+    p.add_argument("--target", default="xtts",
+                   help="쉼표로 여러 개 — 예: xtts,gsv (동시 공격)")
     p.add_argument("--steps", type=int, default=120)
     p.add_argument("--snr", type=float, default=20.0)
     p.add_argument("--seconds", type=float, default=6.0)
@@ -251,7 +371,9 @@ def main() -> int:
     xt = torch.from_numpy(np.ascontiguousarray(x))
     print(f"입력: {args.input} · {len(x) / SAMPLE_RATE:.1f}초")
 
-    target = TARGETS[args.target](device)
+    names = [n.strip() for n in args.target.split(",") if n.strip()]
+    built = [TARGETS[n](device) for n in names]
+    target = built[0] if len(built) == 1 else MultiTarget(built)
     print(f"{args.steps}스텝 · 목표 SNR {args.snr} dB · 운율 가중치 {args.prosody_weight}")
     protected, final = attack(xt, target, steps=args.steps, snr_db=args.snr,
                               prosody_weight=args.prosody_weight,
@@ -265,7 +387,8 @@ def main() -> int:
     pr = final["prosody"]
     print()
     print("복제기 내부 조건 (원본 대비 코사인 · 낮을수록 다른 화자로 인식)")
-    print(f"  화자 임베딩  {final['speaker']:+.4f}")
+    for n, v in final["speaker"].items():
+        print(f"  화자 임베딩 [{n}]  {v:+.4f}")
     print(f"  운율 잠재    {pr:+.4f}" if pr is not None else "  운율 잠재    —")
     print(f"  SNR         {final['snr_db']:.2f} dB")
     print(f"\n출력: {out.resolve()}")

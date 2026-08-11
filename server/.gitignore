@@ -16,3 +16,5 @@ sweep_result.json
 # 테스트가 그 목록을 근거로 회귀를 막는다. 생성은 `python build_tts_bank.py`.
 tts_bank/_index.json
 tts_bank/_build.ps1
+GPT_SoVITS/
+gsv_src/
