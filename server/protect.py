@@ -73,6 +73,12 @@ def main() -> int:
         help=("Resemblyzer 단독으로 최적화한다. 비교 측정 전용이다 — "
               "단독은 다른 복제 모델로 전이되지 않는다(실측 ECAPA 0.8265)."),
     )
+    p.add_argument(
+        "--raw-target", action="store_true",
+        help="원본 파일 자체를 표적으로 최적화한다(채널 통과 전). "
+             "기본값은 통화 채널 통과 후가 표적이다. 위협이 다르다 — "
+             "통화 녹음으로 복제하면 기본값, 영상·파일 수집이면 이 옵션.",
+    )
     p.add_argument("--steps", type=int, default=PGDConfig.steps)
     p.add_argument("--ratio", type=float, default=PGDConfig.masking_ratio,
                    help="마스킹 배율 — 청취 평가로 확정할 값")
@@ -108,9 +114,12 @@ def main() -> int:
         masking_ratio=args.ratio,
         target_snr_db=args.snr,
         enforce_masking=args.enforce_masking,
+        channel_aware=not args.raw_target,
     )
+    target = "원본 파일 자체" if args.raw_target else "통화 채널 통과 후"
     print(f"설정: {cfg.steps}스텝 · 마스킹 배율 {cfg.masking_ratio} · "
           f"목표 SNR {cfg.target_snr_db} dB · 불변식 강제 {cfg.enforce_masking}")
+    print(f"      최적화 표적: {target}")
 
     # 앙상블이 기본이다. 단독 최적화는 다른 복제 모델로 전이되지 않는다 —
     # 실측에서 Resemblyzer만 보고 최적화한 보호본이 ECAPA-TDNN에는

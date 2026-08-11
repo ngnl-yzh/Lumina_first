@@ -48,17 +48,18 @@ def sim(a, b):
 
 conds = [("단독 (Res)", "out/cmp_single", "out/clone_single"),
          ("2개 (Res+ECAPA)", "out/ens_smoke",  "out/clone_ens"),
-         ("3개 200스텝", "out/ens3_200", "out/clone_ens3")]
+         ("3개 200스텝 (채널표적)", "out/ens3_200", "out/clone_ens3"),
+         ("3개 200스텝 (원본표적)", "out/raw3_200", "out/clone_raw3")]
 
 print(f"복제 모델 XTTS-v2 · 조건당 5회 · 판정 임계값 {THRESHOLD} · 전부 {SR} Hz로 맞춤")
-print("=" * 84)
+print("=" * 92)
 head = "".join(f"{n:>16}" for n, _ in ENCODERS)
-print(f"{'보호 방식':18} {'복제 대상':10}{head} {'저지':>6}")
-print("-" * 84)
+print(f"{'보호 방식':24} {'복제 대상':10}{head} {'저지':>6}")
+print("-" * 92)
 for label, src, clone_dir in conds:
     ref_p = pathlib.Path(src) / "original.wav"
     if not ref_p.exists():
-        print(f"{label:18} (보호본 없음 — 건너뜀)"); print("-" * 84); continue
+        print(f"{label:24} (보호본 없음 — 건너뜀)"); print("-" * 92); continue
     ref = load(ref_p)
     refs = [emb(e, ref) for _, e in ENCODERS]
     for tag in ("original", "protected"):
@@ -75,8 +76,8 @@ for label, src, clone_dir in conds:
             return 0.0 if len(v) < 2 else 1.96 * statistics.stdev(v) / len(v) ** 0.5
         cells = "".join(f"{statistics.mean(c):9.4f}±{ci(c):.3f}" for c in cols)
         name = label if tag == "protected" else ""
-        print(f"{name:18} {tag:10}{cells} {blocked/len(files)*100:5.0f}%")
-    print("-" * 84)
+        print(f"{name:24} {tag:10}{cells} {blocked/len(files)*100:5.0f}%")
+    print("-" * 92)
 print()
 print("  저지 = **모든** 인코더가 임계값 아래여야 인정한다.")
 print("  하나로만 재면 그 인코더에 대한 과적합을 다시 보게 된다.")
