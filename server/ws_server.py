@@ -60,11 +60,14 @@ class Services:
         deepvoice: bool = False,
         deepvoice_scoring: bool = False,
         n_encoders: int = 2,
+        cloner_targets: str = "",
     ) -> None:
         self.device = device
         #: 최적화에 쓸 화자 인코더 수. 많을수록 전이가 잘 되지만 비례해 느려진다.
         #: 실측상 어느 값이든 XTTS 복제는 막지 못한다(DSR 0%).
         self.n_encoders = n_encoders
+        self._cloner_targets = cloner_targets
+        self._cloner = None
         self.db = load_db()
         self.scorer = Scorer(self.db)
         self.stt = SpeechToText(model_size=whisper_size)
@@ -100,6 +103,22 @@ class Services:
                 with_wavlm=self.n_encoders >= 3,
             )
         return self._encoder
+
+    @property
+    def cloner(self):
+        """복제기 직접공격 표적. `--cloner` 없이 켜면 None이다.
+
+        무겁다(XTTS ~2 GB · GPT-SoVITS ~200 MB). 첫 요청 때 한 번만 올린다.
+        """
+        if not self._cloner_targets:
+            return None
+        if self._cloner is None:
+            from attack_cloner import TARGETS, MultiTarget
+            names = [n.strip() for n in self._cloner_targets.split(",") if n.strip()]
+            built = [TARGETS[n](self.device) for n in names]
+            self._cloner = built[0] if len(built) == 1 else MultiTarget(built)
+            print(f"  복제기 표적 로드 완료 — {', '.join(t.name for t in built)}")
+        return self._cloner
 
     @property
     def masking(self) -> MaskingModel:
@@ -362,23 +381,82 @@ async def handle_protect_full(ws, svc: Services, cfg: PGDConfig) -> None:
             "snr_db": out.global_snr_db,
             "elapsed": out.total_sec,
             "audible_violation": (out.audibility_abs or out.audibility).violation_ratio,
-            "below_threshold": out.srs_protected
-            < ProtectionResult.PROVISIONAL_THRESHOLD,
+            "below_threshold": out.srs_protected < (
+                CLONER_COND_THRESHOLD if svc.cloner is not None
+                else ProtectionResult.PROVISIONAL_THRESHOLD),
         }))
         await ws.send(out.delta.detach().cpu().numpy().astype("<f4").tobytes())
 
 
 def _protect_whole_entry(audio, svc, cfg, on_step):
-    """`_protect_whole`을 서버에서 부르기 위한 얇은 래퍼.
+    """보호 본체. 표적에 따라 두 갈래로 갈린다.
 
-    진행률 콜백을 넘겨야 해서 `protect_utterance`를 거치지 않는다 —
-    그쪽은 콜백 인자를 노출하지 않는다.
+    **복제기 직접공격이 기본이다.** 화자 검증기를 표적으로 삼는 옛 경로는
+    검증기 숫자만 좋아지고 실제 복제는 못 막았다 — 네 축을 바꿔 네 번 쟀는데
+    전부 저지 0%였다. 복제기의 화자 조건화 경로를 직접 밀자 100%가 됐다.
+
+        검증기 공격 (인코더 3개·200스텝)   저지  0%
+        복제기 직접공격 (XTTS+GPT-SoVITS)  저지 100%   (마스킹 켠 채)
+
+    복제 모델을 못 불러오면 옛 경로로 떨어지되 **경고를 낸다.**
+    그 경로가 복제를 막지 못한다는 것이 측정된 사실이라 모르고 쓰면 안 된다.
     """
+    if svc.cloner is not None:
+        return _protect_by_cloner_attack(audio, svc, cfg, on_step)
+
     from mirinae.pipeline import _protect_whole
 
     return _protect_whole(audio, svc.encoder, cfg,
                           svc.masking, SAMPLE_RATE,
                           with_controls=False, progress=False, on_step=on_step)
+
+
+def _protect_by_cloner_attack(audio, svc, cfg, on_step):
+    """복제기의 화자 조건화 경로를 직접 공격한다 (`attack_cloner.py`).
+
+    옛 경로와 결과 형태를 맞춰 돌려주므로 프로토콜은 그대로다.
+    다만 SRS의 의미가 달라진다 — 화자 검증기가 아니라 **복제기 내부 조건**의
+    유사도다. 그쪽이 실제 복제 결과와 직결된다.
+    """
+    import time
+    from types import SimpleNamespace
+
+    from attack_cloner import attack
+
+    steps = cfg.steps
+    t0 = time.perf_counter()
+    done = {"n": 0}
+
+    def tick(*_a, **_k):
+        done["n"] += 1
+        if on_step:
+            on_step(done["n"], steps)
+
+    protected, final = attack(
+        audio.cpu(), svc.cloner, steps=steps, snr_db=cfg.target_snr_db,
+        prosody_weight=2.0, masking_ratio=cfg.masking_ratio, progress=False,
+    )
+    protected = protected.to(audio.device)
+
+    # 가청도는 옛 경로와 같은 척도로 재서 화면에 같은 의미로 띄운다.
+    from mirinae.metrics import audibility as _aud
+    thr, _ = svc.masking.threshold(audio.cpu())
+    viol = float(_aud(protected.cpu() - audio.cpu(), thr,
+                      cfg.masking_ratio, svc.masking).violation_ratio)
+
+    # 표적이 여럿이면 **가장 덜 밀린 쪽**을 대표값으로 쓴다.
+    # 하나만 막고 나머지가 남으면 방어가 아니다 — 네 번 확인한 사실이다.
+    worst = max(final["speaker"].values()) if final["speaker"] else 0.0
+    return SimpleNamespace(
+        protected=protected,
+        delta=protected - audio,
+        srs_protected=float(worst),
+        srs_basis="복제기 내부 화자 조건 (" + ", ".join(final["speaker"]) + ")",
+        global_snr_db=final["snr_db"],
+        audibility=SimpleNamespace(violation_ratio=viol),
+        audibility_abs=None,
+        total_sec=time.perf_counter() - t0,
+    )
 
 
 async def handle_compare(ws, svc: Services) -> None:
@@ -514,6 +592,7 @@ async def amain(args) -> None:
         deepvoice=args.deepvoice,
         deepvoice_scoring=args.deepvoice_scoring,
         n_encoders=args.encoders,
+        cloner_targets=args.cloner,
     )
     if args.deepvoice:
         print("  딥보이스 탐지 켜짐 — 자체 측정 재현율 18.8%(XTTS). 참고용으로만 볼 것")
@@ -524,8 +603,14 @@ async def amain(args) -> None:
 
     cfg = PGDConfig(steps=args.steps, masking_ratio=args.ratio,
                     time_budget_sec=args.time_budget or None)
-    print(f"  모드 2 — 인코더 {args.encoders}개 · 최대 {args.steps}스텝 · "
-          f"시간 예산 {args.time_budget or 0:.0f}초")
+    if args.cloner:
+        print(f"  모드 2 — **복제기 직접공격** ({args.cloner}) · 최대 {args.steps}스텝 · "
+              f"시간 예산 {args.time_budget or 0:.0f}초")
+    else:
+        print(f"  모드 2 — 화자 검증기 {args.encoders}개 · 최대 {args.steps}스텝 · "
+              f"시간 예산 {args.time_budget or 0:.0f}초")
+        print("  ⚠ 검증기 경로는 실제 복제를 막지 못한다(실측 저지 0%). "
+              "--cloner xtts,gsv 를 쓸 것")
 
     ssl_ctx = None
     if args.ssl_cert and args.ssl_key:
@@ -558,6 +643,13 @@ def main() -> int:
         help=("보호 1건에 쓸 최대 초. 장비에 맞춰 스텝 수가 자동으로 줄어든다. "
               "0이면 제한 없음. 기본 90초 — 앙상블은 CPU에서 8초 녹음에 "
               "7분이 걸려 그대로 두면 앱이 멈춘 것처럼 보인다."),
+    )
+    p.add_argument(
+        "--cloner", default="",
+        help=("복제기를 직접 표적으로 삼는다 — 예: xtts 또는 xtts,gsv. "
+              "비우면 화자 검증기 앙상블(옛 경로)로 돈다. "
+              "실측상 옛 경로는 실제 복제를 막지 못한다(저지 0%%). "
+              "직접공격은 마스킹을 켠 채 저지 100%%다."),
     )
     p.add_argument(
         "--encoders", type=int, default=2, choices=[1, 2, 3],
