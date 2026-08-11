@@ -10,7 +10,8 @@
 import sys, pathlib, statistics, warnings, numpy as np, soundfile as sf, torch
 warnings.filterwarnings("ignore")
 sys.path.insert(0, ".")
-from mirinae.encoder import SpeakerEncoder, EcapaEncoder, cosine_similarity
+from mirinae.encoder import (SpeakerEncoder, EcapaEncoder, WavlmEncoder,
+                             cosine_similarity)
 
 THRESHOLD = 0.7962          # C-D 대조군에서 측정한 EER 지점
 
@@ -35,44 +36,49 @@ def load(p):
         x = resample_poly(x, SR // g, int(sr) // g).astype(np.float32)
     return np.ascontiguousarray(x)
 
-res, eca = SpeakerEncoder(), EcapaEncoder()
-def emb(enc, x): 
-    with torch.no_grad(): return enc(torch.from_numpy(np.ascontiguousarray(x)))
+ENCODERS = [("Resemblyzer", SpeakerEncoder()), ("ECAPA", EcapaEncoder()),
+            ("WavLM", WavlmEncoder())]
 
-conds = [("단독 (Resemblyzer)", "out/cmp_single", "out/clone_single"),
-         ("앙상블 (Res+ECAPA)", "out/ens_smoke",  "out/clone_ens")]
+def emb(enc, x):
+    with torch.no_grad():
+        return enc(torch.from_numpy(np.ascontiguousarray(x)))
+
+def sim(a, b):
+    return float(torch.nn.functional.cosine_similarity(a.unsqueeze(0), b.unsqueeze(0)))
+
+conds = [("단독 (Res)", "out/cmp_single", "out/clone_single"),
+         ("2개 (Res+ECAPA)", "out/ens_smoke",  "out/clone_ens"),
+         ("3개 200스텝", "out/ens3_200", "out/clone_ens3")]
 
 print(f"복제 모델 XTTS-v2 · 조건당 5회 · 판정 임계값 {THRESHOLD} · 전부 {SR} Hz로 맞춤")
-print("=" * 78)
-print(f"{'보호 방식':22} {'복제 대상':10} {'Resemblyzer':>18} {'ECAPA-TDNN':>18} {'저지':>5}")
-print("-" * 78)
-summary = []
+print("=" * 84)
+head = "".join(f"{n:>16}" for n, _ in ENCODERS)
+print(f"{'보호 방식':18} {'복제 대상':10}{head} {'저지':>6}")
+print("-" * 84)
 for label, src, clone_dir in conds:
-    ref = load(pathlib.Path(src) / "original.wav")
-    er, ee = emb(res, ref), emb(eca, ref)
+    ref_p = pathlib.Path(src) / "original.wav"
+    if not ref_p.exists():
+        print(f"{label:18} (보호본 없음 — 건너뜀)"); print("-" * 84); continue
+    ref = load(ref_p)
+    refs = [emb(e, ref) for _, e in ENCODERS]
     for tag in ("original", "protected"):
         files = sorted(pathlib.Path(clone_dir).glob(f"clone_from_{tag}_*.wav"))
         if not files: continue
-        rs, es, blocked = [], [], 0
+        cols = [[] for _ in ENCODERS]
+        blocked = 0
         for f in files:
             c = load(f)
-            r = float(cosine_similarity(er, emb(res, c)))
-            a = float(torch.nn.functional.cosine_similarity(
-                ee.unsqueeze(0), emb(eca, c).unsqueeze(0)))
-            rs.append(r); es.append(a)
-            blocked += (r < THRESHOLD and a < THRESHOLD)
+            vals = [sim(refs[i], emb(e, c)) for i, (_, e) in enumerate(ENCODERS)]
+            for i, v in enumerate(vals): cols[i].append(v)
+            blocked += all(v < THRESHOLD for v in vals)
         def ci(v):
-            if len(v) < 2: return 0.0
-            return 1.96 * statistics.stdev(v) / len(v) ** 0.5
-        dsr = blocked / len(files) * 100
+            return 0.0 if len(v) < 2 else 1.96 * statistics.stdev(v) / len(v) ** 0.5
+        cells = "".join(f"{statistics.mean(c):9.4f}±{ci(c):.3f}" for c in cols)
         name = label if tag == "protected" else ""
-        print(f"{name:22} {tag:10} {statistics.mean(rs):9.4f}±{ci(rs):.4f} "
-              f"{statistics.mean(es):9.4f}±{ci(es):.4f} {dsr:4.0f}%")
-        if tag == "protected":
-            summary.append((label, statistics.mean(rs), statistics.mean(es), dsr))
-    print("-" * 78)
+        print(f"{name:18} {tag:10}{cells} {blocked/len(files)*100:5.0f}%")
+    print("-" * 84)
 print()
-print("  저지 = 두 인코더 **모두** 임계값 아래여야 인정한다.")
+print("  저지 = **모든** 인코더가 임계값 아래여야 인정한다.")
 print("  하나로만 재면 그 인코더에 대한 과적합을 다시 보게 된다.")
 print()
 print("  ※ 기준선을 먼저 볼 것 — **원본 복제**가 임계값 위여야 이 측정이 성립한다.")
