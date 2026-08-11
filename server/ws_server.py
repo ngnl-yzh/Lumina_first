@@ -36,7 +36,7 @@ import websockets
 sys.path.insert(0, str(Path(__file__).parent))
 
 from mirinae.config import PGDConfig, SAMPLE_RATE, default_device
-from mirinae.encoder import EncoderEnsemble, SpeakerEncoder, cosine_similarity
+from mirinae.encoder import EncoderEnsemble, SpeakerEncoder, cosine_similarity, build_ensemble
 from mirinae.pipeline import ProtectionResult
 from mirinae.mode1 import load_db
 from mirinae.mode1.scorer import CallState, Scorer
@@ -89,7 +89,8 @@ class Services:
     @property
     def encoder(self) -> SpeakerEncoder:
         if self._encoder is None:
-            self._encoder = SpeakerEncoder(device=self.device)
+            # 앙상블 — 단독은 다른 복제 모델로 전이되지 않는다(실측 0.8265).
+            self._encoder = build_ensemble(device=self.device)
         return self._encoder
 
     @property
@@ -367,7 +368,7 @@ def _protect_whole_entry(audio, svc, cfg, on_step):
     """
     from mirinae.pipeline import _protect_whole
 
-    return _protect_whole(audio, EncoderEnsemble([svc.encoder]), cfg,
+    return _protect_whole(audio, svc.encoder, cfg,
                           svc.masking, SAMPLE_RATE,
                           with_controls=False, progress=False, on_step=on_step)
 
@@ -419,7 +420,9 @@ async def handle_compare(ws, svc: Services) -> None:
 
         def embed(a=audio):
             with torch.no_grad():
-                return svc.encoder(torch.from_numpy(a).to(svc.device))
+                enc = svc.encoder
+                enc = enc.encoders[0] if hasattr(enc, 'encoders') else enc
+                return enc(torch.from_numpy(a).to(svc.device))
 
         emb = await loop.run_in_executor(None, embed)
 

@@ -25,7 +25,7 @@ import torch
 
 from mirinae.config import PGDConfig, SAMPLE_RATE, default_device
 from mirinae.controls import CONTROL_DESCRIPTIONS, make_controls
-from mirinae.encoder import SpeakerEncoder
+from mirinae.encoder import SpeakerEncoder, build_ensemble
 from mirinae.pipeline import protect_utterance
 
 
@@ -107,7 +107,10 @@ def main() -> int:
     print(f"설정: {cfg.steps}스텝 · 마스킹 배율 {cfg.masking_ratio} · "
           f"목표 SNR {cfg.target_snr_db} dB · 불변식 강제 {cfg.enforce_masking}")
 
-    encoder = SpeakerEncoder(device=device)
+    # 앙상블이 기본이다. 단독 최적화는 다른 복제 모델로 전이되지 않는다 —
+    # 실측에서 Resemblyzer만 보고 최적화한 보호본이 ECAPA-TDNN에는
+    # 0.8265로 남았다(판정 임계값 0.7962). 앙상블은 0.5094까지 내린다.
+    encoder = build_ensemble(device=device)
     print("처리 중...")
     result = protect_utterance(x, encoder, cfg, with_controls=not args.no_controls)
 

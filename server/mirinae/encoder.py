@@ -167,11 +167,95 @@ class SpeakerEncoder(torch.nn.Module):
         }
 
 
+class EcapaEncoder(torch.nn.Module):
+    """ECAPA-TDNN (SpeechBrain · VoxCeleb) — **구조가 다른** 두 번째 인코더.
+
+    ## 왜 붙였나
+
+    모드 2는 SRS를 0.37까지 떨어뜨리는데 **실제 복제 저지율(DSR)은 0%** 였다.
+    화자 검증기는 속이는데 복제 모델은 안 속는다. 전이성 진단으로 원인이 나왔다.
+
+        보호본 out/ref        Resemblyzer 0.6342   ECAPA-TDNN 0.8131
+                             (판정 임계값 0.7962)
+
+    **한쪽은 통과하고 다른 쪽은 실패한다.** Resemblyzer의 임베딩 공간에서만
+    멀어지도록 최적화했으니 당연한 결과다 — 복제 모델은 Resemblyzer를 쓰지 않는다.
+    한 모델만 속이는 것은 방어가 아니라 그 모델에 대한 과적합이다.
+
+    ## 왜 이 모델인가
+
+    Resemblyzer와 겹치는 곳이 최소한이어야 앙상블의 의미가 있다.
+
+    | | Resemblyzer (GE2E) | ECAPA-TDNN |
+    |---|---|---|
+    | 구조 | 3층 LSTM | TDNN + SE-Res2Block + attentive pooling |
+    | 특징 | 선형 power mel 40 | log mel-fbank 80 |
+    | 학습 | LibriSpeech 등 | VoxCeleb 1+2 |
+    | 임베딩 | 256차원 | 192차원 |
+
+    ## 미분 경로
+
+    `encode_batch()`는 내부에서 `torch.no_grad()`를 쓸 수 있고 길이 정규화도
+    끼어든다. 그래서 하위 모듈(`compute_features` → `mean_var_norm` →
+    `embedding_model`)을 직접 호출한다. 셋 다 순수 torch 모듈이라
+    파형까지 역전파가 닿는다. 일치 여부는 `verify_against_speechbrain()`가 확인한다.
+    """
+
+    name = "ecapa"
+    embedding_dim = 192
+
+    def __init__(self, device: torch.device | None = None,
+                 savedir: str = "models/ecapa") -> None:
+        super().__init__()
+        from speechbrain.inference.speaker import EncoderClassifier
+
+        self.device = device or default_device()
+        self.clf = EncoderClassifier.from_hparams(
+            source="speechbrain/spkrec-ecapa-voxceleb",
+            savedir=savedir,
+            run_opts={"device": str(self.device)},
+        )
+        for m in self.clf.mods.values():
+            m.eval()
+            for prm in m.parameters():
+                prm.requires_grad_(False)
+
+    def forward(self, wav: torch.Tensor, normalize: bool = True) -> torch.Tensor:
+        """(n_samples,) 파형 → (192,) 임베딩. gradient가 파형까지 닿는다."""
+        x = wav.to(self.device)
+        if x.dim() == 1:
+            x = x.unsqueeze(0)
+        feats = self.clf.mods.compute_features(x)
+        feats = self.clf.mods.mean_var_norm(
+            feats, torch.ones(x.shape[0], device=self.device))
+        emb = self.clf.mods.embedding_model(
+            feats, torch.ones(x.shape[0], device=self.device))
+        emb = emb.squeeze(0).squeeze(0)
+        return F.normalize(emb, dim=0) if normalize else emb
+
+    def verify_against_speechbrain(self, wav: np.ndarray, tol: float = 1e-3) -> float:
+        """공식 경로와 우리 경로가 같은 임베딩을 내는지 확인한다.
+
+        미분 가능하게 다시 짠 경로는 **반드시 원본과 대조해야 한다.**
+        어긋나 있으면 엉뚱한 방향으로 최적화하면서도 숫자는 좋아 보인다.
+        """
+        with torch.no_grad():
+            official = self.clf.encode_batch(
+                torch.as_tensor(wav).unsqueeze(0)).squeeze()
+            official = F.normalize(official, dim=0)
+            ours = self(torch.as_tensor(wav))
+        gap = float(torch.max(torch.abs(official - ours)))
+        if gap > tol:
+            raise AssertionError(f"ECAPA 미분 경로가 공식 경로와 어긋난다: {gap:.2e}")
+        return gap
+
+
 class EncoderEnsemble(torch.nn.Module):
     """여러 인코더의 손실을 합산한다 — 전이성 확보용 (AntiFake 노선).
 
-    한 모델만 속이면 방어가 아니라 과적합이다. 지금은 Resemblyzer 단독으로 돌지만
-    ECAPA-TDNN을 추가할 자리를 처음부터 열어 둔다.
+    한 모델만 속이면 방어가 아니라 과적합이다. 전이성 진단이 그것을 확인했다 —
+    Resemblyzer만 보고 최적화한 보호본이 ECAPA-TDNN에는 0.8131로 남았다
+    (판정 임계값 0.7962). 그래서 `build_ensemble()`이 기본으로 둘을 함께 쓴다.
     """
 
     def __init__(self, encoders: list[SpeakerEncoder]) -> None:
@@ -195,3 +279,24 @@ def cosine_similarity(a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
 
 def cosine_distance(a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
     return 1.0 - cosine_similarity(a, b)
+
+
+def build_ensemble(device: torch.device | None = None,
+                   with_ecapa: bool = True) -> EncoderEnsemble:
+    """기본 앙상블 — Resemblyzer + ECAPA-TDNN.
+
+    ECAPA를 못 불러오면(패키지 부재·가중치 다운로드 실패) Resemblyzer 단독으로
+    떨어지되 **조용히 넘어가지 않는다.** 단독으로 돌면 전이성이 없다는 것이
+    측정으로 확인된 사실이라, 그 상태를 모르고 쓰면 안 된다.
+    """
+    encoders: list[torch.nn.Module] = [SpeakerEncoder(device=device)]
+    if with_ecapa:
+        try:
+            encoders.append(EcapaEncoder(device=device))
+        except Exception as exc:                      # noqa: BLE001
+            import warnings
+            warnings.warn(
+                f"ECAPA-TDNN을 불러오지 못해 Resemblyzer 단독으로 돕니다: {exc}. "
+                "단독 최적화는 다른 복제 모델로 전이되지 않습니다(실측 0.8131).",
+                RuntimeWarning, stacklevel=2)
+    return EncoderEnsemble(encoders)
