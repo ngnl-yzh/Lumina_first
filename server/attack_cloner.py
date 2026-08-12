@@ -267,7 +267,8 @@ def attack(x: torch.Tensor, target: ClonerTarget, steps: int = 120,
            snr_db: float = 20.0, prosody_weight: float = 1.0,
            masking_ratio: float | None = 3.0,
            progress: bool = True,
-           on_step=None) -> tuple[torch.Tensor, dict]:
+           on_step=None,
+           init_delta: torch.Tensor | None = None) -> tuple[torch.Tensor, dict]:
     """복제기의 화자 조건에서 멀어지도록 파형을 민다.
 
     손실은 **원본 조건과의 코사인 유사도**다. 두 경로를 함께 내린다 —
@@ -287,7 +288,16 @@ def attack(x: torch.Tensor, target: ClonerTarget, steps: int = 120,
         thr, _ = model.threshold(x.cpu())
         thr = thr.to(device)
 
-    delta = torch.zeros_like(x, requires_grad=True)
+    # 시작점. 준실시간 청크 보호에서 **앞 청크가 찾은 방향**을 물려받는 데 쓴다.
+    # 청크마다 0에서 출발하면 미는 방향이 제각각이 되고, 복제기가 파일 전체를
+    # 볼 때 서로 상쇄된다 — 검증기 표적으로 이미 겪은 실패다.
+    if init_delta is None:
+        delta = torch.zeros_like(x, requires_grad=True)
+    else:
+        d0 = init_delta.to(device)
+        if len(d0) < len(x):
+            d0 = d0.repeat(int(np.ceil(len(x) / len(d0))))[:len(x)]
+        delta = d0[:len(x)].clone().detach().requires_grad_(True)
     opt = torch.optim.Adam([delta], lr=1e-3)
 
     hist = {"speaker": [], "prosody": []}
