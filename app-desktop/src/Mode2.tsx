@@ -142,7 +142,7 @@ export default function Mode2({
           addLog(
             `완료 · SRS ${d.srs.toFixed(4)} (${d.srs_basis}) · ` +
               `SNR ${d.snr_db.toFixed(1)} dB · ${d.elapsed.toFixed(0)}초 · ` +
-              (d.below_threshold ? "다른 화자 판정" : "같은 화자 — 방어 미달"),
+              (d.below_threshold ? "섭동 충분히 주입됨" : "섭동 부족 — 스텝을 늘릴 것"),
           );
         } else if (msg.type === "error") {
           setError(msg.message);
@@ -280,14 +280,14 @@ export default function Mode2({
               <div className="small">목표 ≥20 dB</div>
             </div>
             <div className="metric">
-              <div className="k">SRS</div>
+              <div className="k">복제기 조건</div>
               <div className="v" style={{ color: (srs ?? 1) < 0.5 ? "#5E5A94" : "#8794A0" }}>
                 {srs !== null ? srs.toFixed(3) : "—"}
               </div>
               <div className="small">낮을수록 좋음</div>
             </div>
             <div className="metric">
-              <div className="k">판정</div>
+              <div className="k">섭동</div>
               <div
                 className="v"
                 style={{
@@ -295,7 +295,7 @@ export default function Mode2({
                   color: passed === null ? "#8794A0" : passed ? "#2E7D52" : "#A62F5B",
                 }}
               >
-                {passed === null ? "—" : passed ? "다른 화자" : "같은 화자"}
+                {passed === null ? "—" : passed ? "충분" : "부족"}
               </div>
               <div className="small">{secs}초 녹음</div>
             </div>

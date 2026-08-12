@@ -38,12 +38,19 @@ sys.path.insert(0, str(Path(__file__).parent))
 from mirinae.config import PGDConfig, SAMPLE_RATE, default_device
 
 
-#: 복제기 내부 화자 조건이 이 아래면 "다른 화자로 인식된다"고 본다.
+#: 복제기 내부 화자 조건의 판정선. **근거가 약하다는 것을 먼저 적는다.**
 #:
-#: 화자 검증기 임계값(0.7962 등)과 **다른 척도다.** 이쪽은 복제기 안의
-#: 조건 벡터라 0 근처면 원본과 무관한 방향이고 음수면 반대 방향이다.
-#: 실측에서 이 값이 0.3 아래일 때 실제 복제 저지율이 100%였다.
-CLONER_COND_THRESHOLD = 0.30
+#: 표적이 여럿이면 **가장 덜 밀린 쪽**을 대표값으로 쓴다. 그 척도에서
+#: 실제 복제 저지율 100%가 나온 관측은 **한 번뿐**이고 그때 값이 0.6492였다.
+#: 그래서 0.65로 둔다 — 관측 하나에 맞춘 값이다.
+#:
+#: **이 판정을 그대로 믿으면 안 된다.** 실제 사람 목소리에서는 대표값
+#: 0.5682로 이 선 아래였는데도 저지율이 0%였다. 즉 이 값은 실제 복제
+#: 결과를 안정적으로 예측하지 못한다. 화면의 판정은 "섭동이 얼마나 들어갔나"의
+#: 눈금이지 "복제가 막혔다"의 증명이 아니다.
+#:
+#: 제대로 하려면 화자를 늘려 이 값과 저지율의 관계를 다시 재야 한다.
+CLONER_COND_THRESHOLD = 0.65
 from mirinae.encoder import EncoderEnsemble, SpeakerEncoder, cosine_similarity, build_ensemble
 from mirinae.pipeline import ProtectionResult
 from mirinae.mode1 import load_db
@@ -368,6 +375,7 @@ async def handle_protect_full(ws, svc: Services, cfg: PGDConfig) -> None:
             "snr_db": out.global_snr_db,
             "elapsed": out.total_sec,
             "audible_violation": (out.audibility_abs or out.audibility).violation_ratio,
+            # 주의 — 직접공격 경로에서 이 값은 근거가 약하다(위 상수 설명 참조).
             "below_threshold": out.srs_protected < (
                 CLONER_COND_THRESHOLD if svc.cloner is not None
                 else ProtectionResult.PROVISIONAL_THRESHOLD),
