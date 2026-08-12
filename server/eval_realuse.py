@@ -23,11 +23,10 @@ for f in files:
 
 def trace(spec):
     st = CallState(sc)
-    dv = float(spec.get("deepvoice_score", 0.0))
     peak_alert = peak_warn = False
     final = 0.0
     for u in spec["utterances"]:
-        r = st.add_utterance(u["text"], deepvoice_score=dv)
+        r = st.add_utterance(u["text"])
         peak_alert |= r.score >= THRESHOLD_ALERT
         peak_warn |= r.score >= THRESHOLD_WARN
         final = r.score

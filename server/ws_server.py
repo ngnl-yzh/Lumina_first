@@ -65,8 +65,6 @@ class Services:
         self,
         device: torch.device,
         whisper_size: str = "base",
-        deepvoice: bool = False,
-        deepvoice_scoring: bool = False,
         n_encoders: int = 2,
         cloner_targets: str = "",
     ) -> None:
@@ -90,16 +88,9 @@ class Services:
         # D08이 예고한 "학습에 없던 합성 방식에 일반화가 약하다"가 그대로 나온 것이다.
         #
         # 그래서 기본값이 둘 다 False다.
-        #   deepvoice          — 탐지를 아예 돌릴지
-        #   deepvoice_scoring  — 탐지 결과를 **위험도 점수에 반영**할지
-        # 표시만 하고 점수는 건드리지 않는 것이 기본이다.
-        # 못 믿을 신호가 위험도를 올리면 그건 곧 오탐이 된다.
-        self.deepvoice_scoring = deepvoice_scoring
-        self._deepvoice = None
-        if deepvoice:
-            from mirinae.mode1.deepvoice import DeepvoiceDetector
-
-            self._deepvoice = DeepvoiceDetector(device="cuda" if device.type == "cuda" else "cpu")
+        # 딥보이스 탐지는 **모드 1에서 제거됐다.** 재현율 18.8%라
+        # 다섯 번에 네 번을 놓친다. 그런 신호로 위험도를 가중하면 판정이 흔들리고
+        # 문제가 어디서 났는지 보기 어려워진다.
 
     @property
     def encoder(self) -> SpeakerEncoder:
@@ -134,23 +125,16 @@ class Services:
             self._masking = MaskingModel(device=self.device)
         return self._masking
 
-    async def detect_deepvoice(self, audio: np.ndarray, loop) -> dict:
-        """딥보이스 판정. 탐지기가 꺼져 있으면 '판정 안 함'을 그대로 돌려준다.
+    def deepvoice_info(self) -> dict:
+        """딥보이스 탐지는 **모드 1에서 뺐다.** 화면 계약만 유지한다.
 
-        점수를 0으로 채워 보내지 않는다. **모르는 것과 0은 다르다** —
-        UI가 "정상 음성"이라고 표시해 버리면 그건 거짓말이 된다.
+        자체 측정 재현율이 18.8%였다 — 다섯 번에 네 번은 놓친다.
+        그런 신호로 위험도를 가중하면 판정이 흔들리고, 문제가 어디서 났는지
+        보기 어려워진다. `enabled=False`를 그대로 내려보내면 앱이
+        "탐지 꺼짐"으로 표시한다. **모르는 것과 0은 다르다**는 원래 계약이다.
         """
-        if self._deepvoice is None:
-            return {"enabled": False, "usable": False, "fake_prob": None, "label": "미사용"}
-
-        r = await loop.run_in_executor(None, self._deepvoice.score, audio)
-        return {
-            "enabled": True,
-            "usable": r.usable,
-            "fake_prob": r.fake_prob if r.usable else None,
-            "label": r.label(),
-            "scoring": self.deepvoice_scoring,
-        }
+        return {"enabled": False, "usable": False, "fake_prob": None,
+                "label": "탐지 꺼짐", "scoring": False}
 
     def warm_up(self) -> None:
         """첫 연결이 느리지 않도록 미리 올린다. 시연 안정성에 직접 영향을 준다."""
@@ -159,8 +143,6 @@ class Services:
         self.stt.transcribe_text(silence)
         _ = self.encoder
         _ = self.masking
-        if self._deepvoice is not None:
-            self._deepvoice.score(np.zeros(SAMPLE_RATE * 2, dtype=np.float32))
         print("  예열 완료", flush=True)
 
 
@@ -197,14 +179,11 @@ async def handle_mode1(ws, svc: Services) -> None:
             if not text:
                 continue
 
-            dv = await svc.detect_deepvoice(utt.audio, loop)
+            dv = svc.deepvoice_info()
             # 탐지 결과를 점수에 반영할지는 설정에 달렸다. 기본은 반영하지 않는다.
-            dv_for_score = (
-                dv["fake_prob"] if (dv["usable"] and svc.deepvoice_scoring) else 0.0
-            )
 
             t1 = time.perf_counter()
-            result = state.add_utterance(text, deepvoice_score=dv_for_score)
+            result = state.add_utterance(text)
             score_ms = (time.perf_counter() - t1) * 1000.0
             await ws.send(json.dumps({
                 "type": "utterance",
@@ -592,15 +571,11 @@ async def amain(args) -> None:
     svc = Services(
         device,
         whisper_size=args.whisper,
-        deepvoice=args.deepvoice,
-        deepvoice_scoring=args.deepvoice_scoring,
         n_encoders=args.encoders,
         cloner_targets=args.cloner,
     )
-    if args.deepvoice:
-        print("  딥보이스 탐지 켜짐 — 자체 측정 재현율 18.8%(XTTS). 참고용으로만 볼 것")
-        if args.deepvoice_scoring:
-            print("  ⚠ 탐지 결과를 위험도에 반영한다. 검증되지 않은 신호다")
+    if args.deepvoice or args.deepvoice_scoring:
+        print("  ※ 딥보이스 탐지는 모드 1에서 제거됐다(재현율 18.8%). 플래그는 무시된다.")
     if not args.no_warmup:
         svc.warm_up()
 
@@ -665,10 +640,10 @@ def main() -> int:
     p.add_argument("--ssl-cert")
     p.add_argument("--ssl-key")
     p.add_argument("--no-warmup", action="store_true")
-    p.add_argument("--deepvoice", action="store_true",
-                   help="딥보이스 탐지를 켠다 (표시만 · 자체 측정 재현율 18.8%%)")
-    p.add_argument("--deepvoice-scoring", action="store_true",
-                   help="탐지 결과를 위험도 점수에 반영한다. 검증 전에는 쓰지 말 것")
+    # 딥보이스 탐지는 모드 1에서 뺐다 (재현율 18.8%). 옛 스크립트 호환용으로
+    # 플래그만 남기고 아무것도 하지 않는다.
+    p.add_argument("--deepvoice", action="store_true", help=argparse.SUPPRESS)
+    p.add_argument("--deepvoice-scoring", action="store_true", help=argparse.SUPPRESS)
     args = p.parse_args()
 
     try:

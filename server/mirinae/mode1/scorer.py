@@ -74,7 +74,17 @@ CRITICAL_MAX_EDIT = 1
 # 같은 착상을 하한 쪽에 적용한 것이 위의 `CRITICAL_MAX_EDIT`이고, 그쪽은 실제로
 # 오탐률을 낮췄다(오차 25%에서 17.8% → 13.9%, 탐지율 손실 없음).
 COVERAGE_BONUS_SCALE = 1.5
-DEEPVOICE_BONUS = 0.10     # 딥보이스 탐지 결과를 S7 경로에 반영 (P1 과제)
+# 딥보이스 탐지는 **모드 1에서 뺐다.**
+#
+# 자체 측정 재현율이 18.8%였다(XTTS 합성음 16개 중 3개). 다섯 번에 네 번은
+# 딥보이스를 놓친다는 뜻이고, 그런 신호로 위험도를 가중하면 판정이 흔들린다.
+# 실사용 화면에서 명백한 기관 사칭이 0%로 나온 것을 보고 정리했다 —
+# 켜지지도 않는 신호를 배선해 두면 문제가 어디서 났는지 보기 어려워진다.
+#
+# 모드 2가 복제를 막는 쪽으로 실제 성과를 냈으므로(저지 100%),
+# "합성음을 사후에 가려낸다"는 접근은 이 프로젝트에서 우선순위가 아니다.
+# 탐지기 자체(`deepvoice.py`)와 벤치마크는 남겨 둔다 — 지운 이유가 성능이지
+# 방향이 아니고, 나중에 쓸 만한 모델이 나오면 다시 붙일 자리가 필요하다.
 
 
 def _dedupe(items: list[str]) -> list[str]:
@@ -393,24 +403,18 @@ class Scorer:
         self,
         buffer_text: str,
         route: Route | None = None,
-        deepvoice_score: float = 0.0,
-        deepvoice_threshold: float = 0.7,
     ) -> ScoreResult:
         """전사 텍스트를 통째로 채점한다.
 
         통화 중에는 `CallState`가 발화 단위로 증거를 누적하므로 이 경로를 타지 않는다.
         단발 채점·테스트·오프라인 분석용 진입점이다.
         """
-        return self.score_evidence(
-            self.extract(buffer_text), route, deepvoice_score, deepvoice_threshold
-        )
+        return self.score_evidence(self.extract(buffer_text), route)
 
     def score_evidence(
         self,
         ev: Evidence,
         route: Route | None = None,
-        deepvoice_score: float = 0.0,
-        deepvoice_threshold: float = 0.7,
     ) -> ScoreResult:
         """누적된 증거로 위험도를 낸다."""
         hits, matched, suppressed = ev.hits, ev.matched, dict(ev.suppressed)
@@ -449,10 +453,6 @@ class Scorer:
         # 같은 문제를 두 군데서 풀려다 구멍을 냈다.
         if criticals or pairs:
             score = max(score, CRITICAL_FLOOR)
-
-        # 딥보이스 탐지 결과를 가족사칭 경로에 가중 (P1 · 실패 시 제외 가능)
-        if route.id == "B" and deepvoice_score > deepvoice_threshold:
-            score = min(1.0, score + DEEPVOICE_BONUS)
 
         return ScoreResult(
             score=score,
@@ -494,12 +494,10 @@ class CallState:
         """
         return "\n".join(self.utterances)
 
-    def add_utterance(self, text: str, deepvoice_score: float = 0.0) -> ScoreResult:
+    def add_utterance(self, text: str) -> ScoreResult:
         self.utterances.append(text)
         self.evidence.merge(self.scorer.extract(text, index=len(self.utterances)))
-        self.last = self.scorer.score_evidence(
-            self.evidence, deepvoice_score=deepvoice_score
-        )
+        self.last = self.scorer.score_evidence(self.evidence)
         return self.last
 
     def should_intervene(self) -> bool:

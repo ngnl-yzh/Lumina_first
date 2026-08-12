@@ -113,13 +113,12 @@ class Run:
 
 def run_scenario(sc: Scorer, spec: dict) -> Run:
     state = CallState(sc)
-    dv = float(spec.get("deepvoice_score", 0.0))
 
     first_warn = first_alert = None
     trace: list[float] = []
 
     for i, utt in enumerate(spec["utterances"], start=1):
-        r = state.add_utterance(utt["text"], deepvoice_score=dv)
+        r = state.add_utterance(utt["text"])
         trace.append(round(r.score, 4))
         if first_warn is None and r.score >= THRESHOLD_WARN:
             first_warn = i
