@@ -123,8 +123,13 @@ def main() -> int:
         ssl_cert = None
         ssl_key = None
         no_warmup = False
+        # 딥보이스 탐지는 모드 1에서 제거됐다. 플래그는 무시된다.
         deepvoice = args.deepvoice
         deepvoice_scoring = False
+        # 모드 2 — EXE에는 복제 모델을 넣지 않는다(수 GB). 검증기 경로로 돈다.
+        cloner = ""
+        encoders = 2
+        time_budget = 90.0
 
     try:
         asyncio.run(amain(Args()))
