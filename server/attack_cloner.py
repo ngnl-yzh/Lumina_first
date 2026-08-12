@@ -266,7 +266,8 @@ def _cos(a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
 def attack(x: torch.Tensor, target: ClonerTarget, steps: int = 120,
            snr_db: float = 20.0, prosody_weight: float = 1.0,
            masking_ratio: float | None = 3.0,
-           progress: bool = True) -> tuple[torch.Tensor, dict]:
+           progress: bool = True,
+           on_step=None) -> tuple[torch.Tensor, dict]:
     """복제기의 화자 조건에서 멀어지도록 파형을 민다.
 
     손실은 **원본 조건과의 코사인 유사도**다. 두 경로를 함께 내린다 —
@@ -306,6 +307,8 @@ def attack(x: torch.Tensor, target: ClonerTarget, steps: int = 120,
         return loss, sp, pr
 
     for step in range(steps):
+        if on_step is not None:
+            on_step(step + 1, steps)      # 앱 진행 막대를 여기서 움직인다
         loss, _, _ = total_loss(x + delta)
         opt.zero_grad(set_to_none=True)
         loss.backward()

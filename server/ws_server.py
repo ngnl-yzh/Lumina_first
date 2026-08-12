@@ -36,6 +36,14 @@ import websockets
 sys.path.insert(0, str(Path(__file__).parent))
 
 from mirinae.config import PGDConfig, SAMPLE_RATE, default_device
+
+
+#: 복제기 내부 화자 조건이 이 아래면 "다른 화자로 인식된다"고 본다.
+#:
+#: 화자 검증기 임계값(0.7962 등)과 **다른 척도다.** 이쪽은 복제기 안의
+#: 조건 벡터라 0 근처면 원본과 무관한 방향이고 음수면 반대 방향이다.
+#: 실측에서 이 값이 0.3 아래일 때 실제 복제 저지율이 100%였다.
+CLONER_COND_THRESHOLD = 0.30
 from mirinae.encoder import EncoderEnsemble, SpeakerEncoder, cosine_similarity, build_ensemble
 from mirinae.pipeline import ProtectionResult
 from mirinae.mode1 import load_db
@@ -425,16 +433,11 @@ def _protect_by_cloner_attack(audio, svc, cfg, on_step):
 
     steps = cfg.steps
     t0 = time.perf_counter()
-    done = {"n": 0}
-
-    def tick(*_a, **_k):
-        done["n"] += 1
-        if on_step:
-            on_step(done["n"], steps)
 
     protected, final = attack(
         audio.cpu(), svc.cloner, steps=steps, snr_db=cfg.target_snr_db,
         prosody_weight=2.0, masking_ratio=cfg.masking_ratio, progress=False,
+        on_step=on_step,
     )
     protected = protected.to(audio.device)
 
