@@ -226,7 +226,41 @@ class MultiTarget(ClonerTarget):
         return [t.conditioning(wav16k) for t in self.targets]
 
 
-TARGETS = {"xtts": XttsTarget, "gsv": GptSovitsTarget}
+class WavlmVerifierTarget(ClonerTarget):
+    """WavLM-SV — **복제기가 아니라 화자 검증기**다. 표적에 넣는 이유가 따로 있다.
+
+    실제 사람 목소리로 재보니 두 검증기(Resemblyzer·ECAPA)는 넘겼는데
+    WavLM만 0.9538로 남았다 — 원본(0.9271)보다도 높다.
+
+    오늘 네 번 확인한 사실이 그대로 적용된다. **표적에 없는 모델은 안 밀린다.**
+    XTTS와 GPT-SoVITS만 표적으로 삼았으니 WavLM이 안 밀리는 것은 당연하다.
+
+    ## 방법론 주의 — 이걸 넣으면 WavLM은 독립 증거가 아니다
+
+    WavLM은 지금 **채점자**로 쓰고 있다. 그걸 표적에 넣으면 자기 채점표를
+    직접 최적화하는 셈이라, 숫자는 좋아지는데 방어가 나아졌다는 보장은 없다.
+
+    그래서 이 표적을 쓸 때는 **WavLM 점수를 독립 근거로 인용하면 안 된다.**
+    남는 독립 증거는 실제 복제음이다 — XTTS로 복제해 만든 음성이
+    원본 화자와 얼마나 닮았는지가 최종 판정이다.
+    """
+
+    name = "wavlm-sv"
+
+    def __init__(self, device: torch.device) -> None:
+        import sys
+        sys.path.insert(0, str(Path(__file__).parent))
+        from mirinae.encoder import WavlmEncoder
+
+        self.enc = WavlmEncoder(device=device)
+        self.model = self.enc.model
+        self.device = device
+
+    def conditioning(self, wav16k: torch.Tensor) -> Conditioning:
+        return Conditioning(speaker=self.enc(wav16k).flatten(), prosody=None)
+
+
+TARGETS = {"xtts": XttsTarget, "gsv": GptSovitsTarget, "wavlm": WavlmVerifierTarget}
 
 
 # ── 최적화 ────────────────────────────────────────────────────────────────────

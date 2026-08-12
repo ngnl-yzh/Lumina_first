@@ -51,9 +51,9 @@ def test_db_matches_design_doc_counts(db):
     검증셋 2차에서 3항을 더 더했다 — 메신저피싱의 신분증·카드 사진 요구(S5),
     릴레이 사기 1단계의 "끊지 마시고"(S4). 둘 다 실제 수법인데 비어 있었다.
     """
-    assert db.n_base == 108, f"기본 표현 {db.n_base}개"
-    assert db.n_variants == 245, f"변형 {db.n_variants}개"
-    assert db.n_total == 353, f"합계 {db.n_total}개"
+    assert db.n_base == 112, f"기본 표현 {db.n_base}개"
+    assert db.n_variants == 264, f"변형 {db.n_variants}개"
+    assert db.n_total == 376, f"합계 {db.n_total}개"
 
 
 def test_stage_weights_match_doc(db):
@@ -1002,3 +1002,21 @@ def test_minimal_pair_account_provenance(scorer):
               "저번에 쓰던 제 계좌로 삼백만 원만 보내주실 수 있어요"]:
         r = ok.add_utterance(l)
     assert r.level == "안전", r.why()
+
+
+# ── 실사용 STT 오류 ───────────────────────────────────────────────────────────
+
+def test_real_stt_corruption_is_caught(scorer):
+    """실사용 화면에서 0%로 나왔던 통화. 전사가 심하게 깨져 있다.
+
+    금융감독원 → "금융갈리원", 안전계좌 → "안 심계자", 범죄에 이용 → "범죄 인용".
+    근사매칭 예산으로는 못 푸는 거리라 오류형을 직접 넣었다.
+    합성 잡음으로 만든 평가는 이 수준의 왜곡을 재현하지 못한다.
+    """
+    state = CallState(scorer)
+    r = state.add_utterance(
+        "자요 지금 금융갈리원에서 연루될 수 있습니다. 고객님의 통장이 현재 "
+        "범죄 인용 대고 있는 것 같아서 지금 저희 드릴 확인을 해야 하는 상황입니다. "
+        "지금부터 제가 보내드리나 안 심계자로 오늘 보내주시면 보내주신 돈을")
+    assert r.level == "위험", r.why()
+    assert "C1" in r.criticals, r.why()

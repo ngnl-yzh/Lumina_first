@@ -56,7 +56,9 @@ conds = [("단독 (Res)", "out/cmp_single", "out/clone_single"),
          ("복제기 직접공격 30스텝", "out/attack_xtts", "out/clone_attack"),
          ("복제기 직접공격 150스텝", "out/attack_x2", "out/clone_attack2"),
          ("직접공격+마스킹 150스텝", "out/attack_mask", "out/clone_mask"),
-         ("XTTS+GPT-SoVITS 동시", "out/attack_both", "out/clone_both")]
+         ("XTTS+GPT-SoVITS 동시", "out/attack_both", "out/clone_both"),
+         ("실제 목소리 · 표적 2개", "out/team_30", "out/clone_team30"),
+         ("실제 목소리 · 표적 3개", "out/team_w3", "out/clone_team_w3")]
 
 th = " · ".join(f"{n} {THRESHOLDS[n]}" for n, _ in ENCODERS)
 print(f"복제 모델 XTTS-v2 · 조건당 5회 · 전부 {SR} Hz로 맞춤")
