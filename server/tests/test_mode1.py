@@ -51,9 +51,9 @@ def test_db_matches_design_doc_counts(db):
     검증셋 2차에서 3항을 더 더했다 — 메신저피싱의 신분증·카드 사진 요구(S5),
     릴레이 사기 1단계의 "끊지 마시고"(S4). 둘 다 실제 수법인데 비어 있었다.
     """
-    assert db.n_base == 112, f"기본 표현 {db.n_base}개"
-    assert db.n_variants == 264, f"변형 {db.n_variants}개"
-    assert db.n_total == 376, f"합계 {db.n_total}개"
+    assert db.n_base == 115, f"기본 표현 {db.n_base}개"
+    assert db.n_variants == 278, f"변형 {db.n_variants}개"
+    assert db.n_total == 393, f"합계 {db.n_total}개"
 
 
 def test_stage_weights_match_doc(db):
@@ -1020,3 +1020,36 @@ def test_real_stt_corruption_is_caught(scorer):
         "지금부터 제가 보내드리나 안 심계자로 오늘 보내주시면 보내주신 돈을")
     assert r.level == "위험", r.why()
     assert "C1" in r.criticals, r.why()
+
+
+# ── 실사용 녹취 2 — 발화 경계에서 잘린 부정형 ─────────────────────────────────
+
+@pytest.mark.parametrize("text,hit", [
+    ("주변 사람 그 누구에게도 알리", True),        # 부정형이 다음 발화로 넘어감
+    ("반드시 아무한테도 말하지 않고", True),
+    ("누구에게나 알리세요", False),                # 전칭 **긍정** — 뜻이 정반대다
+    ("누구에게 물어볼까", False),
+])
+def test_universal_negative_silence(scorer, text, hit):
+    """전칭 부정 대명사 + 함구 동사는 **부정형 없이도** 고립 신호다.
+
+    실사용에서 "…그 누구에게도 알리"로 발화가 끊겨 12%에 머물렀고,
+    다음 마디에 가서야 75%가 됐다. 한 마디 늦는 것은 실사용에서 크다.
+    "누구에게나 알리세요" 같은 전칭 긍정은 보조사 '도'를 요구해 걸러진다.
+    """
+    assert (scorer.extract(text).hits["S4"] > 0) is hit, text
+
+
+def test_real_transcript_2_caught_early(scorer):
+    """실사용 녹취 — 두 번째 마디에서 위험으로 떠야 한다.
+
+    고치기 전에는 네 마디 내내 12%였고 다섯 번째에야 75%가 됐다.
+    """
+    state = CallState(scorer)
+    r = state.add_utterance(
+        "네 안녕하세요 저는 금융감독위원회 금융금융감독위원회에서 연락을 "
+        "드리고 있는데요 아 네 지금 고객님의 계좌가 지금 불법 통행 유통에 사")
+    r = state.add_utterance(
+        "흔들고 있는 것으로 확인되었습니다 어 해당 계좌로 인해서 지금 현재 "
+        "교회님은 범법에 가담하셨다라는 의심을 받고 있는 상황이에요 그래서 혹시")
+    assert r.level == "위험", r.why()
