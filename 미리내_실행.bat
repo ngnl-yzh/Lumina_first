@@ -16,7 +16,7 @@ echo.
 echo   미리내 — 무엇을 시연합니까?
 echo.
 echo     [1] 모드 1만 (보이스피싱 탐지)      기동 빠름 · 20초
-echo     [2] 모드 1 + 모드 2 (딥보이스 방지)  기동 느림 · 2~3분
+echo     [2] 모드 1 + 모드 2 (딥보이스 방지)  기동 1~2분 · 보호 15초
 echo.
 set /p MODE="   번호 입력 (기본 2): "
 if "%MODE%"=="" set MODE=2
@@ -26,8 +26,8 @@ if "%MODE%"=="1" (
     echo   [서버] 모드 1 전용으로 기동합니다...
     start "미리내 서버" cmd /k ".venv\Scripts\python.exe ws_server.py --port 8765"
 ) else (
-    echo   [서버] 복제 모델을 올립니다. 2~3분 걸립니다. 창을 닫지 마세요.
-    start "미리내 서버" cmd /k ".venv-xtts\Scripts\python.exe ws_server.py --port 8765 --cloner xtts,gsv --steps 80 --time-budget 180"
+    echo   [서버] GPT-SoVITS를 올립니다. 1~2분 걸립니다. 창을 닫지 마세요.
+    start "미리내 서버" cmd /k ".venv-xtts\Scripts\python.exe ws_server.py --port 8765 --cloner gsv --steps 400 --time-budget 120"
 )
 
 echo   [앱] 화면을 띄웁니다...

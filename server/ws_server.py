@@ -423,7 +423,12 @@ def _protect_by_cloner_attack(audio, svc, cfg, on_step):
 
     protected, final = attack(
         audio.cpu(), svc.cloner, steps=steps, snr_db=cfg.target_snr_db,
-        prosody_weight=2.0, masking_ratio=cfg.masking_ratio, progress=False,
+        prosody_weight=0.0, masking_ratio=cfg.masking_ratio, progress=False,
+        # EOT — 열화(전화대역·잡음·절단·mp3)를 최적화 안에 넣는다.
+        # 45회 실험에서 이것 하나가 갈랐다: 없으면 mp3·전화·잡음에서
+        # 뚫렸고(10/15), 넣자 한 겹 열화까지 12/13이 막혔다.
+        # 운율 가중치는 0이다 — GPT-SoVITS의 ref_enc는 음색만 본다.
+        eot=True,
         on_step=on_step,
     )
     protected = protected.to(audio.device)
@@ -623,7 +628,9 @@ def main() -> int:
     p.add_argument("--whisper", default=DEFAULT_WHISPER,
                    help="tiny/base/small/medium. 한국어는 small 이상을 권장한다. "
                         "GPU가 있으면 medium도 실시간을 유지한다")
-    p.add_argument("--steps", type=int, default=PGDConfig.steps)
+    # 400스텝이 기본이다. GPT-SoVITS 단독 + 운율 0이면 CPU에서 **15초**다 —
+    # XTTS를 함께 올리고 운율 경로까지 돌던 옛 설정의 2~3분과 다르다.
+    p.add_argument("--steps", type=int, default=400)
     p.add_argument(
         "--time-budget", type=float, default=90.0,
         help=("보호 1건에 쓸 최대 초. 장비에 맞춰 스텝 수가 자동으로 줄어든다. "
@@ -631,7 +638,7 @@ def main() -> int:
               "7분이 걸려 그대로 두면 앱이 멈춘 것처럼 보인다."),
     )
     p.add_argument(
-        "--cloner", default="",
+        "--cloner", default="gsv",
         help=("복제기를 직접 표적으로 삼는다 — 예: xtts 또는 xtts,gsv. "
               "비우면 화자 검증기 앙상블(옛 경로)로 돈다. "
               "실측상 옛 경로는 실제 복제를 막지 못한다(저지 0%%). "

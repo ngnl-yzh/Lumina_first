@@ -118,7 +118,7 @@ def main() -> int:
         host = "127.0.0.1"
         port = args.ws_port
         whisper = args.whisper or _default_whisper()
-        steps = args.steps if args.steps is not None else PGDConfig.steps
+        steps = args.steps if args.steps is not None else 400
         ratio = PGDConfig.masking_ratio
         ssl_cert = None
         ssl_key = None
@@ -126,10 +126,19 @@ def main() -> int:
         # 딥보이스 탐지는 모드 1에서 제거됐다. 플래그는 무시된다.
         deepvoice = args.deepvoice
         deepvoice_scoring = False
-        # 모드 2 — EXE에는 복제 모델을 넣지 않는다(수 GB). 검증기 경로로 돈다.
-        cloner = ""
+        # 모드 2 — GPT-SoVITS를 표적으로 쓴다.
+        #
+        # 예전에는 검증기 경로로 돌렸다. 그 경로는 **실제 복제를 막지 못한다** —
+        # 네 번 재서 네 번 다 저지 0%였다. 그래서 표적을 복제기로 옮겼고,
+        # 45회 실험에서 한 겹 열화까지 12/13을 막았다.
+        #
+        # XTTS는 수 GB라 넣을 수 없지만 **GPT-SoVITS 표적은 s2G488k.pth
+        # 하나(약 100 MB)면 된다.** 첫 실행에서 내려받는다. 망이 없으면
+        # ws_server가 알아서 검증기 경로로 물러선다.
+        cloner = "gsv"
         encoders = 2
-        time_budget = 90.0
+        # CPU에서 400스텝이 15초다 — 운율 경로를 안 돌기 때문이다.
+        time_budget = 120.0
 
     try:
         asyncio.run(amain(Args()))

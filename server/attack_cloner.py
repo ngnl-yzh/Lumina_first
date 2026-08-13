@@ -302,7 +302,8 @@ def attack(x: torch.Tensor, target: ClonerTarget, steps: int = 120,
            masking_ratio: float | None = 3.0,
            progress: bool = True,
            on_step=None,
-           init_delta: torch.Tensor | None = None) -> tuple[torch.Tensor, dict]:
+           init_delta: torch.Tensor | None = None,
+           eot: bool = False) -> tuple[torch.Tensor, dict]:
     """복제기의 화자 조건에서 멀어지도록 파형을 민다.
 
     손실은 **원본 조건과의 코사인 유사도**다. 두 경로를 함께 내린다 —
@@ -350,10 +351,62 @@ def attack(x: torch.Tensor, target: ClonerTarget, steps: int = 120,
                 pr.append(float(l_p.detach()))
         return loss, sp, pr
 
+    def eot_view(w: torch.Tensor, g: torch.Generator | None) -> torch.Tensor:
+        """공격자가 실제로 손에 넣을 법한 형태로 한 번 망가뜨린다.
+
+        **왜 최적화 안에서 하나.** 깨끗한 파일에서만 최적화한 섭동은
+        mp3·전화대역·잡음을 거치면 씻겨 나간다. 15회 실험에서 그걸 봤다 —
+        열화 없는 조건은 막았는데 `C-noise`·`C-phone`이 뚫렸다.
+
+        손잡이(스텝·SNR·배율)를 돌려도 낫지 않았다. 오히려 mp3는
+        **나빠졌다**(0.8431 → 0.9010). 강도의 문제가 아니라 **강건성**의
+        문제이기 때문이다. 그러면 열화를 손실 안으로 들여와야 한다.
+
+        매 스텝 무작위로 하나를 골라 적용한다. 그래야 섭동이
+        "이 한 가지 열화"가 아니라 **열화 전반**을 견디는 방향으로 자란다.
+        전부 미분 가능해야 해서 mp3는 대역제한+양자화로 근사한다.
+        """
+        import torchaudio.functional as AF
+
+        # 절반은 **두 겹**으로 건다. 실제로는 전화 녹음이 mp3로 넘어가고
+        # 그걸 다시 담는 식으로 겹쳐 오기 때문이다.
+        if int(torch.randint(0, 2, (1,), generator=g)) == 1:
+            return _one(_one(w, g), g)
+        return _one(w, g)
+
+    def _one(w: torch.Tensor, g: torch.Generator | None) -> torch.Tensor:
+        import torchaudio.functional as AF
+
+        k = int(torch.randint(0, 5, (1,), generator=g, device="cpu"))
+        if k == 0:                                   # 그대로
+            return w
+        if k == 1:                                   # 전화 대역 3.4 kHz
+            return AF.lowpass_biquad(w, SAMPLE_RATE, 3400.0)
+        if k == 2:                                   # 잡음 (SNR 20~30 dB)
+            snr = 20.0 + 10.0 * float(torch.rand(1, generator=g))
+            n = torch.randn(w.shape, generator=g, device="cpu").to(w.device)
+            scale = (w.detach().pow(2).mean() /
+                     (n.pow(2).mean() * 10 ** (snr / 10))).sqrt()
+            return w + scale * n
+        if k == 3:                                   # 앞뒤를 잘라 낸 조각
+            n = w.shape[-1]
+            span = max(int(0.4 * n), SAMPLE_RATE * 3)
+            if span >= n:
+                return w
+            s = int(torch.randint(0, n - span, (1,), generator=g))
+            return w[..., s:s + span]
+        # k == 4 — mp3 근사. 세기를 양자화해 미세한 값을 지운다.
+        band = AF.lowpass_biquad(w, SAMPLE_RATE, 7000.0)
+        q = 1.0 / 512
+        return band + (torch.round(band / q) * q - band).detach()
+
+    gen = torch.Generator().manual_seed(0) if eot else None
+
     for step in range(steps):
         if on_step is not None:
             on_step(step + 1, steps)      # 앱 진행 막대를 여기서 움직인다
-        loss, _, _ = total_loss(x + delta)
+        w = x + delta
+        loss, _, _ = total_loss(eot_view(w, gen) if eot else w)
         opt.zero_grad(set_to_none=True)
         loss.backward()
         opt.step()
@@ -391,6 +444,8 @@ def main() -> int:
     p.add_argument("-o", "--out", default="out/attack")
     p.add_argument("--target", default="xtts",
                    help="쉼표로 여러 개 — 예: xtts,gsv (동시 공격)")
+    p.add_argument("--eot", action="store_true",
+                   help="열화(전화대역·잡음·절단·mp3)를 최적화 안에 넣는다")
     p.add_argument("--steps", type=int, default=120)
     p.add_argument("--snr", type=float, default=20.0)
     p.add_argument("--seconds", type=float, default=6.0)
@@ -424,7 +479,8 @@ def main() -> int:
     print(f"{args.steps}스텝 · 목표 SNR {args.snr} dB · 운율 가중치 {args.prosody_weight}")
     protected, final = attack(xt, target, steps=args.steps, snr_db=args.snr,
                               prosody_weight=args.prosody_weight,
-                              masking_ratio=args.masking_ratio or None)
+                              masking_ratio=args.masking_ratio or None,
+                              eot=args.eot)
 
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)

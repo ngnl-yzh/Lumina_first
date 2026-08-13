@@ -41,6 +41,14 @@ hiddenimports = [
 hiddenimports += collect_submodules("faster_whisper")
 hiddenimports += collect_submodules("ctranslate2")
 
+# GPT-SoVITS — 모드 2의 표적. 소스는 로컬에 있고(작다), 가중치
+# s2G488k.pth(약 100 MB)만 첫 실행에서 내려받는다. 이게 있어야 EXE의
+# 모드 2가 **실제 복제를 막는 경로**로 돈다.
+datas += [(str(ROOT / "GPT_SoVITS"), "GPT_SoVITS")]
+hiddenimports += collect_submodules("GPT_SoVITS.module")
+hiddenimports += ["torchaudio", "einops", "GPT_SoVITS.module.models"]
+
+
 # ── excludes 원칙: 추측으로 넣지 말 것 ────────────────────────────────────────
 #
 # 크기를 줄이겠다고 짐작으로 제외했다가 두 번 깨졌다.
