@@ -305,6 +305,15 @@ export default function Mode2({
               {elapsed.toFixed(0)}초 처리 · 기준 {basis}
             </p>
           )}
+          {finished && basis !== "" && !basis.includes("복제기") && (
+            <div className="banner banner-note" style={{ marginTop: 10, marginBottom: 0 }}>
+              <strong>제한 모드입니다.</strong> 지금 서버는 복제 모델 없이
+              화자 검증기만 보고 최적화했습니다. 이 경로는 실측에서
+              <strong> 실제 복제를 막지 못했습니다(저지 0%)</strong> —
+              화면의 숫자는 검증기 유사도일 뿐입니다.
+              제대로 보호하려면 서버를 <code>--cloner xtts,gsv</code>로 띄우세요.
+            </div>
+          )}
           {violation !== null && violation >= 0.05 && (
             <div className="banner banner-note" style={{ marginTop: 10, marginBottom: 0 }}>
               마스킹 임계값을 넘는 구간이 {(violation * 100).toFixed(0)}%입니다.
