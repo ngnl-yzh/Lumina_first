@@ -46,6 +46,15 @@ hiddenimports += collect_submodules("ctranslate2")
 # 모드 2가 **실제 복제를 막는 경로**로 돈다.
 datas += [(str(ROOT / "GPT_SoVITS"), "GPT_SoVITS")]
 hiddenimports += collect_submodules("GPT_SoVITS.module")
+# x_transformers는 GPT_SoVITS가 모듈 수준에서 import한다. 빠지면
+# 모드 2가 실행 시점에 "No module named 'x_transformers'"로 죽는다 —
+# 빌드는 성공하므로 EXE를 **실제로 돌려 봐야** 잡힌다.
+hiddenimports += collect_submodules("x_transformers")
+# x_transformers 안에 @torch.jit.script가 있다. TorchScript는 컴파일할 때
+# **원본 .py를 읽으므로** 바이트코드만 넣으면 실행 시점에 죽는다:
+#   Can't get source for <function softclamp>. TorchScript requires source access
+# 그래서 이 패키지만 소스 그대로 디스크에 푼다.
+module_collection_mode = {"x_transformers": "py"}
 hiddenimports += ["torchaudio", "einops", "GPT_SoVITS.module.models"]
 
 
@@ -75,6 +84,7 @@ a = Analysis(
     binaries=[],
     datas=datas,
     hiddenimports=hiddenimports,
+    module_collection_mode=module_collection_mode,
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
