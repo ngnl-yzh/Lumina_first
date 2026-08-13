@@ -58,10 +58,12 @@ conds = [("단독 (Res)", "out/cmp_single", "out/clone_single"),
          ("직접공격+마스킹 150스텝", "out/attack_mask", "out/clone_mask"),
          ("XTTS+GPT-SoVITS 동시", "out/attack_both", "out/clone_both"),
          ("실제 목소리 · 표적 2개", "out/team_30", "out/clone_team30"),
-         ("실제 목소리 · 표적 3개", "out/team_w3", "out/clone_team_w3")]
+         ("실제 목소리 · 표적 3개", "out/team_w3", "out/clone_team_w3"),
+         ("GPT-SoVITS 복제 (표적 3개)", "out/gsv_smoke", "out/gsv_smoke"),
+         ("**GPT-SoVITS 집중 250스텝**", "out/gsv_focus", "out/gsv_focus")]
 
 th = " · ".join(f"{n} {THRESHOLDS[n]}" for n, _ in ENCODERS)
-print(f"복제 모델 XTTS-v2 · 조건당 5회 · 전부 {SR} Hz로 맞춤")
+print(f"복제 모델 XTTS-v2 (마지막 줄만 GPT-SoVITS) · 전부 {SR} Hz로 맞춤")
 print(f"인코더별 임계값 — {th}")
 print("=" * 92)
 head = "".join(f"{n:>16}" for n, _ in ENCODERS)
